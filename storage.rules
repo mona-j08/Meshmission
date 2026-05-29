@@ -1,0 +1,44 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    // Helper: check if user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Helper: check if user has admin role
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.role == 'admin';
+    }
+
+    // ─── Donation Images ─────────────────────────────────────
+    
+    match /donations/{donorId}/{donationId}/{file} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() &&
+                   request.auth.token.role == 'donor' &&
+                   request.auth.uid == donorId &&
+                   request.resource.size < 10 * 1024 * 1024 &&
+                   request.resource.contentType.matches('image/.*');
+      allow delete: if isAdmin();
+    }
+
+    // ─── User Profile Images ─────────────────────────────────
+    
+    match /profiles/{userId}/{file} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn() &&
+                   request.auth.uid == userId &&
+                   request.resource.size < 5 * 1024 * 1024 &&
+                   request.resource.contentType.matches('image/.*');
+    }
+
+    // ─── Default: deny all other paths ───────────────────────
+    
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

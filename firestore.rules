@@ -1,0 +1,189 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── HELPER FUNCTIONS ───────────────────────────────────────
+    
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuth() && request.auth.uid == uid;
+    }
+
+    function hasRole(role) {
+      return isAuth() && request.auth.token.role == role;
+    }
+
+    function isAdmin() {
+      return hasRole('admin');
+    }
+
+    // Check if volunteer is assigned to the donation via its pickup task
+    function isVolunteerForDonation(donation) {
+      return hasRole('volunteer') &&
+        donation.pickupTaskId != null &&
+        get(/databases/$(database)/documents/pickup_tasks/$(donation.pickupTaskId)).data.volunteerId == request.auth.uid;
+    }
+
+    // Check if NGO is matched to the donation
+    function isMatchedNgo(donation) {
+      return hasRole('ngo') && donation.matchedNgoId == request.auth.uid;
+    }
+
+    // ─── users COLLECTION ───────────────────────────────────────
+    
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create: if isOwner(userId) && request.resource.data.role in ['donor', 'volunteer', 'ngo', 'admin'];
+      allow update: if isOwner(userId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── donations COLLECTION ───────────────────────────────────
+    
+    match /donations/{donationId} {
+      allow read: if isAuth() && (
+        resource.data.donorId == request.auth.uid ||
+        isAdmin() ||
+        isVolunteerForDonation(resource.data) ||
+        isMatchedNgo(resource.data)
+      );
+      allow create: if hasRole('donor') && 
+        request.resource.data.donorId == request.auth.uid &&
+        (request.resource.data.status == 'pending' || request.resource.data.status == 'uploaded');
+      allow update: if isAdmin() || (
+        isOwner(resource.data.donorId) &&
+        (
+          request.resource.data.status == resource.data.status ||
+          (resource.data.status == 'uploaded' && request.resource.data.status == 'pending')
+        ) &&
+        request.resource.data.verificationStatus == resource.data.verificationStatus
+      );
+      allow delete: if isAdmin();
+    }
+
+    // ─── ngo_profiles COLLECTION ────────────────────────────────
+    
+    match /ngo_profiles/{ngoId} {
+      allow read: if isAuth();
+      allow create: if isOwner(ngoId) && hasRole('ngo');
+      allow update: if isOwner(ngoId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── ngo_requirements COLLECTION ────────────────────────────
+    
+    match /ngo_requirements/{reqId} {
+      allow read: if isAuth() && (
+        resource.data.ngoId == request.auth.uid ||
+        isAdmin() ||
+        hasRole('volunteer')
+      );
+      allow create: if hasRole('ngo') && 
+        request.resource.data.ngoId == request.auth.uid;
+      allow update: if isAuth() && (
+        resource.data.ngoId == request.auth.uid || isAdmin()
+      );
+      allow delete: if isAuth() && (
+        resource.data.ngoId == request.auth.uid || isAdmin()
+      );
+    }
+
+    // ─── volunteers COLLECTION ──────────────────────────────────
+    
+    match /volunteers/{volunteerId} {
+      allow read: if isAuth();
+      allow create: if isOwner(volunteerId) && hasRole('volunteer');
+      allow update: if isOwner(volunteerId) || isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ─── pickup_tasks COLLECTION ────────────────────────────────
+    
+    match /pickup_tasks/{taskId} {
+      allow read: if isAuth() && (
+        resource.data.volunteerId == request.auth.uid ||
+        resource.data.donorId == request.auth.uid ||
+        resource.data.status == 'open' ||
+        isAdmin()
+      );
+      allow create: if isAdmin();
+      allow update: if isAdmin() || (
+        isAuth() && (
+          resource.data.volunteerId == request.auth.uid ||
+          (resource.data.status == 'open' && request.resource.data.volunteerId == request.auth.uid)
+        ) &&
+        !('otp' in request.resource.data) &&
+        !('otpExpiresAt' in request.resource.data) &&
+        !('otpAttempts' in request.resource.data)
+      );
+      allow delete: if isAdmin();
+
+      // PII subcollection protection
+      match /private/{docId} {
+        allow read: if isAuth() && (
+          get(/databases/$(database)/documents/pickup_tasks/$(taskId)).data.volunteerId == request.auth.uid ||
+          isAdmin()
+        );
+        allow create, update, delete: if false; // Cloud Functions only
+      }
+    }
+
+    // ─── collection_points COLLECTION ───────────────────────────
+    
+    match /collection_points/{pointId} {
+      allow read: if isAuth();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ─── deliveries COLLECTION ──────────────────────────────────
+    
+    match /deliveries/{deliveryId} {
+      allow read: if isAuth() && (
+        resource.data.volunteerId == request.auth.uid ||
+        resource.data.ngoId == request.auth.uid ||
+        isAdmin()
+      );
+      allow create: if isAdmin() || hasRole('volunteer');
+      allow update: if isAuth() && (
+        resource.data.volunteerId == request.auth.uid ||
+        resource.data.ngoId == request.auth.uid ||
+        isAdmin()
+      );
+      allow delete: if isAdmin();
+    }
+
+    // ─── notifications COLLECTION ───────────────────────────────
+    
+    match /notifications/{notifId} {
+      allow read: if isAuth() && resource.data.userId == request.auth.uid;
+      allow update: if isAuth() && 
+        resource.data.userId == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['read']);
+      allow create: if false; // Admin SDK only
+      allow delete: if false; // Admin SDK only
+    }
+
+    // ─── impact COLLECTION ──────────────────────────────────────
+    
+    match /impact/{docId} {
+      allow read: if isAuth();
+      allow create, update, delete: if false; // Admin SDK only
+    }
+
+    // ─── matches COLLECTION ─────────────────────────────────────
+    
+    match /matches/{matchId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false; // Admin SDK only
+    }
+
+    // Default deny rule
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

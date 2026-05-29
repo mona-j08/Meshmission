@@ -1,0 +1,22 @@
+{
+  "name": "meshmission-functions",
+  "version": "1.0.0",
+  "description": "MeshMission Cloud Functions",
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.0.0",
+    "firebase-functions": "^5.0.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "eslint": "^8.56.0"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only functions"
+  }
+}
