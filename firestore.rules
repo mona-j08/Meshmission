@@ -14,13 +14,10 @@ service cloud.firestore {
     }
 
     function hasRole(role) {
-      // Check custom claim first, then fallback to users/{uid} document role when claim missing
-      if (!isAuth()) return false;
-      if (request.auth.token.role == role) return true;
-      // Fallback: read users doc (safe and fast). This allows admin access during environments
-      // where custom claims are not populated or Cloud Functions to set claims haven't run yet.
-      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
-      return userDoc.exists && userDoc.data.role == role;
+      return isAuth() && (
+        request.auth.token.role == role ||
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == role)
+      );
     }
 
     function isAdmin() {
@@ -51,22 +48,13 @@ service cloud.firestore {
     // ─── donations COLLECTION ───────────────────────────────────
     
     match /donations/{donationId} {
-      allow read: if isAuth() && (
-        resource.data.donorId == request.auth.uid ||
-        isAdmin() ||
-        isVolunteerForDonation(resource.data) ||
-        isMatchedNgo(resource.data)
-      );
-      allow create: if hasRole('donor') && 
+      allow read: if isAuth();
+      allow create: if isAuth() && 
         request.resource.data.donorId == request.auth.uid &&
         (request.resource.data.status == 'pending' || request.resource.data.status == 'uploaded');
-      allow update: if isAdmin() || (
-        isOwner(resource.data.donorId) &&
-        (
-          request.resource.data.status == resource.data.status ||
-          (resource.data.status == 'uploaded' && request.resource.data.status == 'pending')
-        ) &&
-        request.resource.data.verificationStatus == resource.data.verificationStatus
+      allow update: if isAuth() && (
+        isAdmin() ||
+        resource.data.donorId == request.auth.uid
       );
       allow delete: if isAdmin();
     }

@@ -149,8 +149,10 @@ const DonationFormScreen = ({ navigation }) => {
         updateProgress(progress);
       });
 
-      if (!result || result?.error) {
-        Alert.alert('Submission Failed', result?.error || 'Failed to create donation. Please try again.');
+      // result is either a donationId string, or { error: '...' }
+      if (!result || typeof result === 'object') {
+        const errorMsg = (typeof result === 'object' && result?.error) || 'Failed to create donation. Please try again.';
+        Alert.alert('Submission Failed', errorMsg);
         setSubmitting(false);
         return;
       }

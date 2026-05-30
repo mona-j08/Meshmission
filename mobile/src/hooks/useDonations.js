@@ -140,8 +140,9 @@ export const useDonations = (donorId) => {
 
         return donationId;
       } catch (err) {
+        console.error('[submitDonation] Error:', err.message);
         setError(err.message);
-        return null;
+        return { error: err.message };
       }
     },
     [donorId]
