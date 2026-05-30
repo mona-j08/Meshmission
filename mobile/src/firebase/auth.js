@@ -62,9 +62,16 @@ export const registerWithEmail = async (email, password, role = 'donor', name = 
     });
     if (userProfileError) throw new Error(userProfileError);
 
-    // Step 3: Set role custom claims via Cloud Function
-    const { error: claimsError } = await setUserRole(user.uid, role);
-    if (claimsError) throw new Error(`Custom claims failed: ${claimsError}`);
+    // Step 3: Set role custom claims via Cloud Function (non-critical)
+    // Cloud Functions require Blaze plan — if not deployed, role from Firestore doc is used instead
+    try {
+      const { error: claimsError } = await setUserRole(user.uid, role);
+      if (claimsError) {
+        console.warn('[auth:registerWithEmail] Custom claims skipped:', claimsError);
+      }
+    } catch (claimsErr) {
+      console.warn('[auth:registerWithEmail] Custom claims unavailable (Cloud Functions not deployed):', claimsErr.message);
+    }
 
     // Step 4: Create role-specific Firestore profile
     if (role === 'volunteer') {
@@ -83,8 +90,12 @@ export const registerWithEmail = async (email, password, role = 'donor', name = 
       if (ngoError) throw new Error(ngoError);
     }
 
-    // Step 5: Force refresh token to reflect custom claims locally
-    await user.getIdToken(true);
+    // Step 5: Force refresh token (non-critical if claims weren't set)
+    try {
+      await user.getIdToken(true);
+    } catch (tokenErr) {
+      console.warn('[auth:registerWithEmail] Token refresh skipped:', tokenErr.message);
+    }
 
     // Step 6: Success — Return user
     return { user, error: null };

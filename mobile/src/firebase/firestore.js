@@ -261,7 +261,12 @@ export const approveDonation = async (donationId) => {
       verificationStatus: VERIFICATION_STATUS.APPROVED,
       updatedAt: serverTimestamp(),
     });
-    await triggerMatchingEngine(donationId);
+    // Non-critical: Cloud Functions may not be deployed
+    try {
+      await triggerMatchingEngine(donationId);
+    } catch (matchErr) {
+      console.warn('[firestore:approveDonation] Matching engine unavailable:', matchErr.message);
+    }
     return { error: null };
   } catch (error) {
     throw new Error(`[firestore:approveDonation] ${error.message}`);
@@ -276,7 +281,12 @@ export const rejectDonation = async (donationId, reason) => {
       rejectionReason: reason,
       updatedAt: serverTimestamp(),
     });
-    await notifyDonorRejection(donationId, reason);
+    // Non-critical: Cloud Functions may not be deployed
+    try {
+      await notifyDonorRejection(donationId, reason);
+    } catch (notifyErr) {
+      console.warn('[firestore:rejectDonation] Notification unavailable:', notifyErr.message);
+    }
     return { error: null };
   } catch (error) {
     throw new Error(`[firestore:rejectDonation] ${error.message}`);
