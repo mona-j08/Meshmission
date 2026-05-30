@@ -49,27 +49,39 @@ export const createDonationDoc = ({
   donorId,
   category,
   description,
-  quantity,
+  reason,
+  quantity = 1,
   condition = null,
   location = null,
   images = [],
   urgencyLevel = 'normal',
+  status = null,
+  notes = null,
+  pickupPreference = null,
+  isRecurring = false,
+  recurringFrequency = null,
 }) => {
   requireField(donorId, 'donorId', 'createDonationDoc');
   requireField(category, 'category', 'createDonationDoc');
-  requireField(description, 'description', 'createDonationDoc');
-  requireField(quantity, 'quantity', 'createDonationDoc');
+
+  // Accept either `description` or `reason` from the form
+  const resolvedDescription = description || reason;
+  requireField(resolvedDescription, 'description', 'createDonationDoc');
 
   return {
     donorId,
     category,
-    description,
+    description: resolvedDescription,
     quantity,
     condition,
     location,
     images,
     urgencyLevel,
-    status: DONATION_STATUS.PENDING,
+    notes,
+    pickupPreference,
+    isRecurring,
+    recurringFrequency,
+    status: status || DONATION_STATUS.PENDING,
     verificationStatus: VERIFICATION_STATUS.PENDING,
     rejectionReason: null,
     matchedNgoId: null,

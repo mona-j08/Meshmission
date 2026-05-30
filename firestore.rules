@@ -14,7 +14,13 @@ service cloud.firestore {
     }
 
     function hasRole(role) {
-      return isAuth() && request.auth.token.role == role;
+      // Check custom claim first, then fallback to users/{uid} document role when claim missing
+      if (!isAuth()) return false;
+      if (request.auth.token.role == role) return true;
+      // Fallback: read users doc (safe and fast). This allows admin access during environments
+      // where custom claims are not populated or Cloud Functions to set claims haven't run yet.
+      let userDoc = get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return userDoc.exists && userDoc.data.role == role;
     }
 
     function isAdmin() {

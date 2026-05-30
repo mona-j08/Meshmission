@@ -104,9 +104,20 @@ export const firestoreService = {
   // Update donation status/verification
   updateDonationVerification: async (donationId, status, details = {}) => {
     const donationRef = doc(db, 'donations', donationId);
+    
+    // Map verification status to donation status
+    let donationStatus = 'pending';
+    if (status === 'approved') {
+      donationStatus = 'approved';
+    } else if (status === 'rejected') {
+      donationStatus = 'rejected';
+    } else if (status === 'needs_review') {
+      donationStatus = 'pending';
+    }
+    
     await updateDoc(donationRef, {
       verificationStatus: status,
-      status: status === 'approved' ? 'approved' : status === 'rejected' ? 'rejected' : 'pending',
+      status: donationStatus,
       ...details,
       updatedAt: new Date().toISOString()
     });

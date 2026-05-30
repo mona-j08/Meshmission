@@ -145,12 +145,12 @@ const DonationFormScreen = ({ navigation }) => {
         recurringFrequency: recurringFrequency !== 'None' ? recurringFrequency : null,
       };
 
-      const result = await submitDonation(donationData, (progress) => {
+      const result = await submitDonation(donationData, images, (progress) => {
         updateProgress(progress);
       });
 
-      if (result?.error) {
-        Alert.alert('Submission Failed', result.error);
+      if (!result || result?.error) {
+        Alert.alert('Submission Failed', result?.error || 'Failed to create donation. Please try again.');
         setSubmitting(false);
         return;
       }

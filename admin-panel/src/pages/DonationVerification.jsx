@@ -130,10 +130,10 @@ export default function DonationVerification() {
                 {filteredItems.map((item) => (
                   <tr key={item.id} className="table-row-hoverable">
                     <td className="thumbnail-cell">
-                      {item.imageUrls && item.imageUrls.length > 0 ? (
+                      {(item.images && item.images.length > 0) || (item.imageUrls && item.imageUrls.length > 0) ? (
                         <img 
                           className="table-thumbnail-img" 
-                          src={item.imageUrls[0]} 
+                          src={(item.images && item.images[0]) || (item.imageUrls && item.imageUrls[0])} 
                           alt="Thumbnail" 
                         />
                       ) : (
@@ -147,7 +147,7 @@ export default function DonationVerification() {
                     <td><span className="category-pill-label">{item.category}</span></td>
                     <td><strong>{item.quantity}</strong> units</td>
                     <td><span className={`condition-tag cond-${item.condition}`}>{item.condition}</span></td>
-                    <td>{item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'N/A'}</td>
+                    <td>{item.createdAt ? new Date(item.createdAt.seconds ? item.createdAt.seconds * 1000 : item.createdAt).toLocaleDateString() : 'N/A'}</td>
                     <td><StatusBadge status={item.verificationStatus || item.status} /></td>
                     <td className="action-cell">
                       <button 

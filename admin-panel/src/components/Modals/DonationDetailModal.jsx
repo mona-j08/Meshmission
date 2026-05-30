@@ -26,12 +26,13 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
       });
 
       if (onActionSuccess) onActionSuccess();
-      onClose();
+      // Give Firestore time to sync real-time updates before closing modal
+      setTimeout(() => onClose(), 300);
     } catch (err) {
       console.error('Approval failed:', err);
       setError('Failed to approve donation. Please try again.');
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleNeedsReview = async () => {
@@ -40,12 +41,13 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
     try {
       await firestoreService.updateDonationVerification(donation.id, 'needs_review');
       if (onActionSuccess) onActionSuccess();
-      onClose();
+      // Give Firestore time to sync real-time updates before closing modal
+      setTimeout(() => onClose(), 300);
     } catch (err) {
       console.error('Needs review update failed:', err);
       setError('Failed to flag donation as Needs Review.');
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleReject = async (e) => {
@@ -62,12 +64,13 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
         rejectionReason: rejectionReason.trim(),
       });
       if (onActionSuccess) onActionSuccess();
-      onClose();
+      // Give Firestore time to sync real-time updates before closing modal
+      setTimeout(() => onClose(), 300);
     } catch (err) {
       console.error('Rejection failed:', err);
       setError('Failed to reject donation.');
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -132,17 +135,21 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
             <div className="donation-gallery">
               <span className="info-label">Uploaded Images</span>
               <div className="image-scroll-gallery">
-                {donation.imageUrls && donation.imageUrls.length > 0 ? (
-                  donation.imageUrls.map((url, idx) => (
-                    <div className="gallery-image-frame" key={idx}>
-                      <img src={url} alt={`Donation Item ${idx + 1}`} />
+                {(() => {
+                  const imgs = donation.imageUrls || donation.images || [];
+                  if (imgs.length > 0) {
+                    return imgs.map((url, idx) => (
+                      <div className="gallery-image-frame" key={idx}>
+                        <img src={url} alt={`Donation Item ${idx + 1}`} />
+                      </div>
+                    ));
+                  }
+                  return (
+                    <div className="no-images-placeholder">
+                      <span>📷 No images uploaded</span>
                     </div>
-                  ))
-                ) : (
-                  <div className="no-images-placeholder">
-                    <span>📷 No images uploaded</span>
-                  </div>
-                )}
+                  );
+                })()}
               </div>
             </div>
           </div>
