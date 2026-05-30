@@ -132,23 +132,35 @@ export const createNGOProfileDoc = ({
 export const createNGORequirementDoc = ({
   ngoId,
   category,
+  // Accept both `quantityNeeded` (schema name) and `quantity` (form name)
   quantityNeeded,
-  urgencyLevel = 'normal',
+  quantity,
+  // Accept both `urgencyLevel` (schema name) and `urgency` (form name)
+  urgencyLevel,
+  urgency,
+  // Accept `title` from form as part of description or as its own field
+  title = null,
   description = null,
   deliveryDeadline = null,
   expiryDate = null,
   expirySensitive = false,
 }) => {
+  const resolvedQuantity = quantityNeeded || quantity;
+  const resolvedUrgency = urgencyLevel || urgency || 'normal';
+
   requireField(ngoId, 'ngoId', 'createNGORequirementDoc');
   requireField(category, 'category', 'createNGORequirementDoc');
-  requireField(quantityNeeded, 'quantityNeeded', 'createNGORequirementDoc');
+  requireField(resolvedQuantity, 'quantity', 'createNGORequirementDoc');
 
   return {
     ngoId,
     category,
-    quantityNeeded,
+    title,
+    quantityNeeded: resolvedQuantity,
+    quantity: resolvedQuantity,
     quantityFulfilled: 0,
-    urgencyLevel,
+    urgencyLevel: resolvedUrgency,
+    urgency: resolvedUrgency,
     description,
     deliveryDeadline,
     expiryDate,
