@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useCollection } from '../hooks/useFirestore';
-import { firestoreService } from '../hooks/useFirestore';
 import LoadingSpinner from '../components/Common/LoadingSpinner';
 import StatusBadge from '../components/Common/StatusBadge';
 
@@ -8,17 +7,14 @@ export default function VolunteerManagement() {
   const { data: users, loading: loadingUsers } = useCollection('users');
   const { data: volunteers, loading: loadingVolunteers } = useCollection('volunteers');
   const { data: tasks, loading: loadingTasks } = useCollection('pickup_tasks');
-  const { data: donations, loading: loadingDonations } = useCollection('donations');
 
-  const [assigningVolunteer, setAssigningVolunteer] = useState(null);
-  const [selectedDonationId, setSelectedDonationId] = useState('');
-  const [loadingAssign, setLoadingAssign] = useState(false);
+  const [activeTab, setActiveTab] = useState('market');
 
-  if (loadingUsers || loadingVolunteers || loadingTasks || loadingDonations) {
-    return <LoadingSpinner message="Mobilizing volunteer networks and fetching operations logs..." />;
+  if (loadingUsers || loadingVolunteers || loadingTasks) {
+    return <LoadingSpinner message="Loading volunteer network and open task market..." />;
   }
 
-  // Combine user details with volunteer profiles
+  // Combine volunteer profiles with user details
   const volunteerList = volunteers.map((vol) => {
     const user = users.find((u) => u.id === vol.id) || {};
     const volTasks = tasks.filter((t) => t.volunteerId === vol.id);
@@ -28,16 +24,23 @@ export default function VolunteerManagement() {
       email: user.email || 'N/A',
       phoneNumber: user.phoneNumber || 'N/A',
       tasksCount: volTasks.length,
-      activeTasks: volTasks.filter((t) => t.status !== 'completed' && t.status !== 'declined'),
+      activeTasks: volTasks.filter(
+        (t) => t.status !== 'completed' && t.status !== 'declined'
+      ),
+      completedTasks: volTasks.filter((t) => t.status === 'completed'),
     };
   });
 
-  // Filter donations that are approved but not yet assigned to any task
-  const unassignedDonations = donations.filter((donation) => {
-    const isApproved = donation.status === 'approved' || donation.verificationStatus === 'approved';
-    const isAssigned = tasks.some((t) => t.donationId === donation.id && t.status !== 'declined');
-    return isApproved && !isAssigned;
-  });
+  // Open Market: tasks with status 'open' (no volunteer claimed yet)
+  const openMarketTasks = tasks.filter((t) => t.status === 'open');
+
+  // Active tasks: claimed and in-progress
+  const activeTasks = tasks.filter(
+    (t) => t.status === 'accepted' || t.status === 'otp_sent' || t.status === 'assigned'
+  );
+
+  // Completed tasks
+  const completedTasks = tasks.filter((t) => t.status === 'completed');
 
   const getVehicleIcon = (hasVehicle, type = 'bike') => {
     if (!hasVehicle) return '🚶 Walk';
@@ -47,189 +50,314 @@ export default function VolunteerManagement() {
     return '🛵 Scooter/Bike';
   };
 
-  const handleOpenAssignModal = (vol) => {
-    setAssigningVolunteer(vol);
-    setSelectedDonationId('');
-  };
-
-  const handleAssignTask = async (e) => {
-    e.preventDefault();
-    if (!selectedDonationId || !assigningVolunteer) return;
-
-    setLoadingAssign(true);
+  const formatDate = (val) => {
+    if (!val) return 'N/A';
     try {
-      const selectedDonation = donations.find((d) => d.id === selectedDonationId);
-      
-      const taskData = {
-        volunteerId: assigningVolunteer.id,
-        donationId: selectedDonationId,
-        donorId: selectedDonation.donorId || '',
-        category: selectedDonation.category || '',
-        description: selectedDonation.description || 'Assigned Item',
-        pickupAddress: selectedDonation.pickupAddress || 'Address not listed',
-        status: 'assigned',
-      };
-
-      await firestoreService.assignPickupTask(taskData);
-      alert('Task successfully assigned to volunteer.');
-      setAssigningVolunteer(null);
-    } catch (err) {
-      console.error('Failed to assign task:', err);
-      alert('Failed to assign task. Try again.');
+      const d = val?.seconds ? new Date(val.seconds * 1000) : new Date(val);
+      return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    } catch {
+      return 'N/A';
     }
-    setLoadingAssign(false);
   };
+
+  const getVolunteerName = (volunteerId) => {
+    if (!volunteerId) return '—';
+    const vol = volunteerList.find((v) => v.id === volunteerId);
+    return vol ? vol.name : `ID: ${volunteerId.slice(0, 8)}...`;
+  };
+
+  const TABS = [
+    { key: 'market', label: `🛒 Open Market (${openMarketTasks.length})` },
+    { key: 'active', label: `🚗 In Progress (${activeTasks.length})` },
+    { key: 'completed', label: `✅ Completed (${completedTasks.length})` },
+    { key: 'volunteers', label: `👤 Volunteers (${volunteerList.length})` },
+  ];
+
+  const renderMarket = () => (
+    <div className="table-card-panel">
+      <div className="panel-header-section">
+        <div>
+          <h3>🛒 Open Task Market</h3>
+          <p style={{ color: '#64748b', fontSize: '0.9rem', margin: '4px 0 0' }}>
+            Approved donations waiting for a volunteer to self-assign. Volunteers see and claim these from the mobile app.
+          </p>
+        </div>
+      </div>
+      {openMarketTasks.length > 0 ? (
+        <div className="table-responsive-wrapper">
+          <table className="admin-data-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Description</th>
+                <th>Pickup Address</th>
+                <th>Posted On</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {openMarketTasks.map((task) => (
+                <tr key={task.id} className="table-row-hoverable">
+                  <td>
+                    <span className="category-pill-label">
+                      {task.category || '—'}
+                    </span>
+                  </td>
+                  <td className="desc-cell">
+                    <div className="item-main-desc">{task.description || 'No description'}</div>
+                    <div className="item-sub-id">Donation: {(task.donationId || '').slice(0, 8)}...</div>
+                  </td>
+                  <td style={{ color: '#475569', fontSize: '0.875rem' }}>
+                    📍 {task.pickupAddress || 'Address not listed'}
+                  </td>
+                  <td>{formatDate(task.createdAt)}</td>
+                  <td>
+                    <span style={{
+                      display: 'inline-block',
+                      padding: '4px 12px',
+                      borderRadius: '20px',
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      background: 'rgba(14, 165, 233, 0.1)',
+                      color: '#0ea5e9',
+                      border: '1px solid rgba(14,165,233,0.3)',
+                    }}>
+                      🟢 Open — Awaiting Volunteer
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="table-empty-state">
+          <span className="empty-icon">🎉</span>
+          <h4>No open tasks right now</h4>
+          <p>All approved donations have been claimed by volunteers, or no donations have been approved yet.</p>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderActive = () => (
+    <div className="table-card-panel">
+      <div className="panel-header-section">
+        <h3>🚗 Tasks In Progress</h3>
+      </div>
+      {activeTasks.length > 0 ? (
+        <div className="table-responsive-wrapper">
+          <table className="admin-data-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Description</th>
+                <th>Volunteer</th>
+                <th>Pickup Address</th>
+                <th>Claimed On</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {activeTasks.map((task) => (
+                <tr key={task.id} className="table-row-hoverable">
+                  <td><span className="category-pill-label">{task.category || '—'}</span></td>
+                  <td className="desc-cell">
+                    <div className="item-main-desc">{task.description || 'No description'}</div>
+                  </td>
+                  <td>
+                    <div className="user-metadata">
+                      <span className="user-display-name">{getVolunteerName(task.volunteerId)}</span>
+                    </div>
+                  </td>
+                  <td style={{ color: '#475569', fontSize: '0.875rem' }}>
+                    📍 {task.pickupAddress || '—'}
+                  </td>
+                  <td>{formatDate(task.updatedAt || task.createdAt)}</td>
+                  <td><StatusBadge status={task.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="table-empty-state">
+          <span className="empty-icon">🚦</span>
+          <h4>No tasks in progress</h4>
+          <p>Tasks will appear here once volunteers claim open market items.</p>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderCompleted = () => (
+    <div className="table-card-panel">
+      <div className="panel-header-section">
+        <h3>✅ Completed Deliveries</h3>
+      </div>
+      {completedTasks.length > 0 ? (
+        <div className="table-responsive-wrapper">
+          <table className="admin-data-table">
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th>Description</th>
+                <th>Volunteer</th>
+                <th>Completed On</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {completedTasks.map((task) => (
+                <tr key={task.id} className="table-row-hoverable">
+                  <td><span className="category-pill-label">{task.category || '—'}</span></td>
+                  <td className="desc-cell">
+                    <div className="item-main-desc">{task.description || 'No description'}</div>
+                  </td>
+                  <td>
+                    <span className="user-display-name">{getVolunteerName(task.volunteerId)}</span>
+                  </td>
+                  <td>{formatDate(task.completedAt || task.updatedAt)}</td>
+                  <td><StatusBadge status={task.status} /></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="table-empty-state">
+          <span className="empty-icon">📦</span>
+          <h4>No completed tasks yet</h4>
+          <p>Deliveries confirmed via OTP will appear here.</p>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderVolunteers = () => (
+    <div className="table-card-panel">
+      <div className="panel-header-section">
+        <h3>👤 Volunteer Directory</h3>
+      </div>
+      {volunteerList.length > 0 ? (
+        <div className="table-responsive-wrapper">
+          <table className="admin-data-table">
+            <thead>
+              <tr>
+                <th>Volunteer</th>
+                <th>Transport</th>
+                <th>Region</th>
+                <th>Active Tasks</th>
+                <th>Completed</th>
+              </tr>
+            </thead>
+            <tbody>
+              {volunteerList.map((vol) => (
+                <tr key={vol.id} className="table-row-hoverable">
+                  <td className="volunteer-info-cell">
+                    <div className="user-avatar-placeholder bg-teal">
+                      {vol.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div className="user-metadata">
+                      <span className="user-display-name">{vol.name}</span>
+                      <span className="user-email-text">{vol.phoneNumber} • {vol.email}</span>
+                    </div>
+                  </td>
+                  <td>
+                    <span className="vehicle-badge-pill">
+                      {getVehicleIcon(vol.hasVehicle, vol.vehicleType)}
+                    </span>
+                  </td>
+                  <td>
+                    <span className="region-text">
+                      {vol.activeArea || vol.serviceRegion || 'All Areas'}
+                    </span>
+                  </td>
+                  <td>
+                    <strong style={{ color: vol.activeTasks.length > 0 ? '#0ea5e9' : '#94a3b8' }}>
+                      {vol.activeTasks.length} active
+                    </strong>
+                  </td>
+                  <td>
+                    <strong style={{ color: '#22c55e' }}>{vol.completedTasks.length}</strong>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="table-empty-state">
+          <span className="empty-icon">🚴</span>
+          <h4>No volunteers registered</h4>
+          <p>Volunteers need to register and set up their profile in the mobile app.</p>
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <div className="volunteers-page-container">
-      {/* Overview Stat Header */}
+      {/* Stats Header */}
       <div className="overview-header-cards">
         <div className="mini-stat-card">
-          <span className="stat-label">Total Volunteers Registered</span>
+          <span className="stat-label">🛒 Open in Market</span>
+          <h3 style={{ color: '#0ea5e9' }}>{openMarketTasks.length}</h3>
+        </div>
+        <div className="mini-stat-card">
+          <span className="stat-label">🚗 In Progress</span>
+          <h3 style={{ color: '#f59e0b' }}>{activeTasks.length}</h3>
+        </div>
+        <div className="mini-stat-card">
+          <span className="stat-label">✅ Completed</span>
+          <h3 style={{ color: '#22c55e' }}>{completedTasks.length}</h3>
+        </div>
+        <div className="mini-stat-card">
+          <span className="stat-label">👤 Volunteers</span>
           <h3>{volunteerList.length}</h3>
         </div>
-        <div className="mini-stat-card">
-          <span className="stat-label">Active Transits</span>
-          <h3>{tasks.filter((t) => t.status === 'accepted' || t.status === 'otp_sent').length}</h3>
-        </div>
-        <div className="mini-stat-card">
-          <span className="stat-label">Unassigned Donations Ready</span>
-          <h3>{unassignedDonations.length}</h3>
+      </div>
+
+      {/* How it works banner */}
+      <div style={{
+        background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%)',
+        border: '1px solid #bae6fd',
+        borderRadius: '12px',
+        padding: '16px 20px',
+        margin: '0 0 24px',
+        display: 'flex',
+        alignItems: 'flex-start',
+        gap: '12px',
+      }}>
+        <span style={{ fontSize: '1.5rem' }}>ℹ️</span>
+        <div>
+          <strong style={{ color: '#0369a1' }}>Open Market System</strong>
+          <p style={{ margin: '4px 0 0', color: '#0c4a6e', fontSize: '0.875rem', lineHeight: 1.5 }}>
+            When you <strong>approve</strong> a donation in the Verifications tab, a pickup task is automatically posted to the open market.
+            Volunteers see available tasks in real-time on their mobile app and <strong>self-assign</strong> by clicking "Accept".
+            No manual dispatch required.
+          </p>
         </div>
       </div>
 
-      {/* Volunteer Directory Table */}
-      <div className="table-card-panel">
-        <div className="panel-header-section">
-          <h3>Volunteer Directory & Routing Dispatch</h3>
-        </div>
-
-        {volunteerList.length > 0 ? (
-          <div className="table-responsive-wrapper">
-            <table className="admin-data-table">
-              <thead>
-                <tr>
-                  <th>Volunteer Details</th>
-                  <th>Transport Badge</th>
-                  <th>Operating Region</th>
-                  <th>Assigned Tasks</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {volunteerList.map((vol) => (
-                  <tr key={vol.id} className="table-row-hoverable">
-                    <td className="volunteer-info-cell">
-                      <div className="user-avatar-placeholder bg-teal">
-                        {vol.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div className="user-metadata">
-                        <span className="user-display-name">{vol.name}</span>
-                        <span className="user-email-text">{vol.phoneNumber} • {vol.email}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <span className="vehicle-badge-pill">
-                        {getVehicleIcon(vol.hasVehicle, vol.vehicleType)}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="region-text">
-                        {vol.activeArea || vol.serviceRegion || 'All Services'}
-                      </span>
-                    </td>
-                    <td>
-                      <div className="tasks-summary-cell">
-                        <strong>{vol.activeTasks.length} Active</strong>
-                        <span className="tasks-meta">({vol.tasksCount} total runs)</span>
-                      </div>
-                    </td>
-                    <td className="action-cell">
-                      <button
-                        className="btn-primary btn-sm btn-success"
-                        onClick={() => handleOpenAssignModal(vol)}
-                      >
-                        ⚡ Dispatch Task
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <div className="table-empty-state">
-            <span className="empty-icon">🚴</span>
-            <h4>No volunteers found</h4>
-            <p>Ensure users are registering and configuring volunteer profiles in the mobile app.</p>
-          </div>
-        )}
+      {/* Tabs */}
+      <div className="tab-navigation-bar" style={{ marginBottom: '0' }}>
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            className={`tab-item ${activeTab === tab.key ? 'active' : ''}`}
+            onClick={() => setActiveTab(tab.key)}
+          >
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      {/* Dispatch Assignment Modal Overlay */}
-      {assigningVolunteer && (
-        <div className="modal-backdrop-overlay">
-          <div className="modal-content-container assignment-modal">
-            <div className="modal-header">
-              <h3>Manual Delivery Dispatch</h3>
-              <button className="modal-close-btn" onClick={() => setAssigningVolunteer(null)}>&times;</button>
-            </div>
-            
-            <form onSubmit={handleAssignTask}>
-              <div className="modal-body">
-                <div className="assignee-preview-card">
-                  <h5>Assignee Details</h5>
-                  <p><strong>Name:</strong> {assigningVolunteer.name}</p>
-                  <p><strong>Vehicle:</strong> {getVehicleIcon(assigningVolunteer.hasVehicle, assigningVolunteer.vehicleType)}</p>
-                  <p><strong>Current Load:</strong> {assigningVolunteer.activeTasks.length} pending tasks</p>
-                </div>
-
-                <div className="form-group margin-top-md">
-                  <label htmlFor="donation-select">Select Approved Contribution to Dispatch:</label>
-                  {unassignedDonations.length > 0 ? (
-                    <select
-                      id="donation-select"
-                      className="form-input-control"
-                      value={selectedDonationId}
-                      onChange={(e) => setSelectedDonationId(e.target.value)}
-                      required
-                    >
-                      <option value="">-- Choose Approved Donation Item --</option>
-                      {unassignedDonations.map((d) => (
-                        <option key={d.id} value={d.id}>
-                          {d.category.toUpperCase()} - {d.description.slice(0, 30)}... ({d.quantity} units)
-                        </option>
-                      ))}
-                    </select>
-                  ) : (
-                    <div className="no-donations-warning">
-                      ⚠️ No approved, unassigned donations available right now. Approve donations in the Verifications tab first.
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              <div className="modal-footer">
-                <button
-                  type="button"
-                  className="btn-secondary"
-                  onClick={() => setAssigningVolunteer(null)}
-                  disabled={loadingAssign}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="btn-primary"
-                  disabled={loadingAssign || !selectedDonationId}
-                >
-                  {loadingAssign ? 'Dispatching Task...' : 'Confirm Dispatch'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      {/* Tab Content */}
+      {activeTab === 'market' && renderMarket()}
+      {activeTab === 'active' && renderActive()}
+      {activeTab === 'completed' && renderCompleted()}
+      {activeTab === 'volunteers' && renderVolunteers()}
     </div>
   );
 }
