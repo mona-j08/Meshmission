@@ -6,6 +6,9 @@ import {
   StyleSheet,
   Image,
   Dimensions,
+  TouchableOpacity,
+  Linking,
+  Alert,
 } from 'react-native';
 import Colors from '../../constants/colors';
 import { PICKUP_TASK_STATUS, DONATION_STATUS } from '../../constants/status';
@@ -214,12 +217,59 @@ const VolunteerTaskDetailScreen = ({ route, navigation }) => {
         ))
       )}
 
-      {/* Collection Point Info */}
+      {/* Drop-off Destination */}
       {task.collectionPoint && (
         <View style={styles.collectionPointCard}>
-          <Text style={styles.sectionTitle}>Collection Point</Text>
-          <Text style={styles.cpName}>{task.collectionPoint.name}</Text>
-          <Text style={styles.cpAddress}>{task.collectionPoint.address}</Text>
+          <View style={styles.cpHeader}>
+            <Text style={styles.cpHeaderIcon}>🏢</Text>
+            <View style={styles.cpHeaderText}>
+              <Text style={styles.cpLabel}>Drop-off Destination</Text>
+              <Text style={styles.cpName}>{task.collectionPoint.name}</Text>
+            </View>
+          </View>
+
+          <View style={styles.cpDivider} />
+
+          <View style={styles.cpRow}>
+            <Text style={styles.cpRowIcon}>📍</Text>
+            <Text style={styles.cpAddress}>
+              {task.collectionPoint.address || 'Address not provided'}
+            </Text>
+          </View>
+
+          {task.collectionPoint.contactPerson && (
+            <View style={styles.cpRow}>
+              <Text style={styles.cpRowIcon}>👤</Text>
+              <Text style={styles.cpContact}>
+                {task.collectionPoint.contactPerson}
+                {task.collectionPoint.phone ? `  ·  ${task.collectionPoint.phone}` : ''}
+              </Text>
+            </View>
+          )}
+
+          {/* Open Maps button */}
+          <TouchableOpacity
+            style={styles.mapsButton}
+            activeOpacity={0.8}
+            onPress={() => {
+              const cp = task.collectionPoint;
+              let url;
+              if (cp.location?.lat && cp.location?.lng) {
+                url = `https://www.google.com/maps/dir/?api=1&destination=${cp.location.lat},${cp.location.lng}`;
+              } else if (cp.address) {
+                url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cp.address)}`;
+              }
+              if (url) {
+                Linking.openURL(url).catch(() =>
+                  Alert.alert('Error', 'Could not open maps application.')
+                );
+              } else {
+                Alert.alert('No location data', 'This NGO has not set a precise location yet.');
+              }
+            }}
+          >
+            <Text style={styles.mapsButtonText}>🗺️  Open in Maps</Text>
+          </TouchableOpacity>
         </View>
       )}
 
@@ -405,23 +455,76 @@ const styles = StyleSheet.create({
     backgroundColor: Colors.disabledBackground,
   },
   collectionPointCard: {
-    backgroundColor: Colors.cardBackground,
+    backgroundColor: '#f0fdf4',
     borderRadius: 14,
     padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
+    borderWidth: 1.5,
+    borderColor: '#86efac',
     marginTop: 8,
     marginBottom: 16,
   },
-  cpName: {
-    fontSize: 16,
+  cpHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  cpHeaderIcon: {
+    fontSize: 28,
+    marginRight: 10,
+  },
+  cpHeaderText: {
+    flex: 1,
+  },
+  cpLabel: {
+    fontSize: 11,
     fontWeight: '600',
-    color: Colors.heading,
-    marginBottom: 4,
+    color: '#16a34a',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 2,
+  },
+  cpName: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#14532d',
+  },
+  cpDivider: {
+    height: 1,
+    backgroundColor: '#bbf7d0',
+    marginBottom: 12,
+  },
+  cpRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 8,
+  },
+  cpRowIcon: {
+    fontSize: 14,
+    marginRight: 8,
+    marginTop: 1,
   },
   cpAddress: {
     fontSize: 14,
-    color: Colors.paragraph,
+    color: '#166534',
+    flex: 1,
+    lineHeight: 20,
+  },
+  cpContact: {
+    fontSize: 13,
+    color: '#15803d',
+    flex: 1,
+  },
+  mapsButton: {
+    marginTop: 8,
+    backgroundColor: '#16a34a',
+    borderRadius: 10,
+    paddingVertical: 11,
+    alignItems: 'center',
+  },
+  mapsButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
   },
   otpButton: {
     marginTop: 20,
