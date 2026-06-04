@@ -93,7 +93,7 @@ const VolunteerTasksScreen = ({ navigation }) => {
       return;
     }
     if (task.status !== PICKUP_TASK_STATUS.ASSIGNED && task.status !== PICKUP_TASK_STATUS.OPEN) {
-      navigation.navigate('VolunteerTaskDetail', { task });
+      navigation.navigate('VolunteerTaskDetail', { taskId: task.id, task });
     }
   };
 

@@ -166,7 +166,7 @@ const VolunteerHomeScreen = ({ navigation }) => {
               style={styles.recentTaskCard}
               onPress={() => {
                 if (task.status !== PICKUP_TASK_STATUS.ASSIGNED) {
-                  navigation.navigate('VolunteerTaskDetail', { task });
+                  navigation.navigate('VolunteerTaskDetail', { taskId: task.id, task });
                 }
               }}
               activeOpacity={0.7}

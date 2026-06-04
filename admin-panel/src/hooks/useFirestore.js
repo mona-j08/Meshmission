@@ -180,8 +180,25 @@ export const firestoreService = {
     const tasksRef = collection(db, 'pickup_tasks');
     return await addDoc(tasksRef, {
       ...taskData,
+      donationIds: taskData.donationIds || (taskData.donationId ? [taskData.donationId] : []),
       status: 'open',
       volunteerId: null,
+      // Drop-off / destination fields
+      ngoName: taskData.ngoName || null,
+      ngoAddress: taskData.ngoAddress || null,
+      collectionPointId: taskData.collectionPointId || null,
+      collectionPointName: taskData.collectionPointName || null,
+      collectionPointAddress: taskData.collectionPointAddress || null,
+      dropOffLocation: taskData.dropOffLocation || null,
+      // OTP fields
+      otp: null,
+      otpExpiresAt: null,
+      otpVerified: false,
+      otpAttempts: 0,
+      otpGenerationCount: 0,
+      lastOtpGeneratedAt: null,
+      scheduledDate: null,
+      completedAt: null,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     });

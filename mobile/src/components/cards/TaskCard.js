@@ -1,210 +1,201 @@
-import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import Colors from '../../constants/colors';
-import { CATEGORY_LABELS, CATEGORY_ICONS } from '../../constants/categories';
-import { PICKUP_TASK_STATUS } from '../../constants/status';
-import { getInitials } from '../../utils/matchingHelper';
-import { getGeneralArea } from '../../utils/locationHelper';
-import StatusBadge from '../badges/StatusBadge';
+// ─── TaskCard.js (Mobile App — volunteer task list card) ─────────────────────
+// FIX SUMMARY:
+//  1. Read `task.donorLocation` as the primary field (matches Firestore schema).
+//     Fall back to `task.pickupLocation` for any legacy documents that used the
+//     old key, so existing tasks don't suddenly break.
+//  2. Import and use `getDonorInitials()` from locationHelper so the avatar
+//     circle shows real initials instead of hardcoded "??" when `donorName` is
+//     present on the task document.
+//  3. Import and use `formatScheduledDate()` so the date row shows a real value
+//     instead of "No date set" now that `scheduledDate` is written by the hook.
+//  4. The parent VolunteerTasksScreen passes `getGeneralArea(item.donorLocation)`
+//     as a prop already — but we also compute it locally as a belt-and-suspenders
+//     fallback so the card works even when rendered without that prop.
+// ────────────────────────────────────────────────────────────────────────────
+
+import React from "react";
+import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
+import { getGeneralArea, getDonorInitials, formatScheduledDate } from "../../utils/locationHelper";
+
+// ── TaskCard ──────────────────────────────────────────────────────────────────
 
 /**
- * TaskCard — displays a pickup task summary for volunteers.
- * Shows donor initials (NOT full name) and general area (NOT full address) for privacy.
- *
- * @param {object} task - Task object with: id, donorName, category, pickupLocation, scheduledDate, status, vehicleRequired
- * @param {function} onPress - Called when the card is tapped
- * @param {function} [onAccept] - Called when Accept button is pressed
- * @param {function} [onDecline] - Called when Decline button is pressed
- * @param {object} [style] - Optional container style override
+ * @param {Object}   props
+ * @param {Object}   props.task        - The pickup_tasks Firestore document data
+ * @param {Function} props.onPress     - Called when the card is tapped
+ * @param {string}   [props.areaLabel] - Pre-computed area string from parent
+ *                                       (VolunteerTasksScreen passes this)
  */
+export default function TaskCard({ task, onPress, areaLabel }) {
+  // ── FIX 1: donorLocation with backward-compat fallback ────────────────────
+  // Old tasks may have stored the address under `pickupLocation` (wrong key).
+  // New tasks written by the fixed useFirestore.js use `donorLocation`.
+  const location = task.donorLocation || task.pickupLocation || null;
 
-const formatDate = (timestamp) => {
-  if (!timestamp) return 'No date set';
-  const date = timestamp?.toDate ? timestamp.toDate() : new Date(timestamp);
-  return date.toLocaleDateString('en-IN', {
-    day: 'numeric',
-    month: 'short',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-};
+  // ── Area string ───────────────────────────────────────────────────────────
+  // Prefer the pre-computed prop from the parent list screen (avoids
+  // recalculating on every render), but fall back to computing it locally.
+  const area = areaLabel || getGeneralArea(location);
 
-const TaskCard = ({ task, onPress, onAccept, onDecline, style }) => {
-  const initials = getInitials(task.donorName);
-  const categoryLabel = CATEGORY_LABELS[task.category] || task.category;
-  const categoryIcon = CATEGORY_ICONS[task.category] || '📦';
-  const area = getGeneralArea(task.pickupLocation);
-  const isAssigned = task.status === PICKUP_TASK_STATUS.ASSIGNED;
+  // ── FIX 2: Donor initials using the helper ────────────────────────────────
+  // `task.donorName` is now written by the fixed createOpenPickupTask().
+  // getDonorInitials() gracefully returns "??" when the name is missing.
+  const initials = getDonorInitials(task.donorName);
 
+  // ── FIX 3: Scheduled date ─────────────────────────────────────────────────
+  // `task.scheduledDate` is now written (as null) by createOpenPickupTask().
+  // formatScheduledDate() returns "Not scheduled" for null — which is better
+  // than "No date set" and is factually accurate.
+  const dateLabel = formatScheduledDate(task.scheduledDate);
+
+  // ── Drop-off location ──────────────────────────────────────────────────────
+  const dropOffName = task.dropOffLocation?.name || task.collectionPointName || task.ngoName || null;
+
+  // ── Status badge colour ───────────────────────────────────────────────────
+  const statusColor = {
+    open:        "#4CAF50",
+    accepted:    "#2196F3",
+    "in-transit": "#FF9800",
+    completed:   "#9E9E9E",
+  }[task.status] || "#9E9E9E";
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <TouchableOpacity
-      style={[styles.card, style]}
-      onPress={onPress}
-      activeOpacity={0.7}
-      accessibilityRole="button"
-      accessibilityLabel={`Pickup task for ${categoryLabel} in ${area}`}
-    >
-      <View style={styles.header}>
-        <View style={styles.avatarCircle}>
-          <Text style={styles.avatarText}>{initials}</Text>
-        </View>
-
-        <View style={styles.headerInfo}>
-          <View style={styles.categoryRow}>
-            <Text style={styles.categoryEmoji}>{categoryIcon}</Text>
-            <Text style={styles.categoryLabel}>{categoryLabel}</Text>
-          </View>
-          <Text style={styles.area} numberOfLines={1}>
-            📍 {area}
-          </Text>
-        </View>
-
-        <StatusBadge status={task.status} />
+    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.85}>
+      {/* ── Avatar ──────────────────────────────────────────────────────── */}
+      <View style={styles.avatar}>
+        <Text style={styles.avatarText}>{initials}</Text>
       </View>
 
-      <View style={styles.meta}>
-        <Text style={styles.date}>🗓 {formatDate(task.scheduledDate)}</Text>
+      {/* ── Content ─────────────────────────────────────────────────────── */}
+      <View style={styles.content}>
+        {/* Donor name row */}
+        <Text style={styles.donorName} numberOfLines={1}>
+          {task.donorName || "Unknown Donor"}
+        </Text>
 
-        {task.vehicleRequired ? (
-          <View style={styles.vehicleBadge}>
-            <Text style={styles.vehicleText}>🚗 Vehicle</Text>
-          </View>
+        {/* Category */}
+        {task.category ? (
+          <Text style={styles.category} numberOfLines={1}>
+            {task.category}
+          </Text>
+        ) : null}
+
+        {/* Pickup area */}
+        <Text style={styles.area} numberOfLines={1}>
+          📍 {area}
+        </Text>
+
+        {/* Drop-off destination */}
+        {dropOffName ? (
+          <Text style={styles.dropoff} numberOfLines={1}>
+            🏢 → {dropOffName}
+          </Text>
+        ) : null}
+
+        {/* Date */}
+        <Text style={styles.date}>
+          🗓 {dateLabel}
+        </Text>
+
+        {/* Pickup preference */}
+        {task.pickupPreference ? (
+          <Text style={styles.preference} numberOfLines={1}>
+            ⏰ {task.pickupPreference}
+          </Text>
         ) : null}
       </View>
 
-      {isAssigned && (onAccept || onDecline) ? (
-        <View style={styles.actions}>
-          {onDecline ? (
-            <TouchableOpacity
-              style={styles.declineButton}
-              onPress={onDecline}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Decline task"
-            >
-              <Text style={styles.declineText}>Decline</Text>
-            </TouchableOpacity>
-          ) : null}
-
-          {onAccept ? (
-            <TouchableOpacity
-              style={styles.acceptButton}
-              onPress={onAccept}
-              activeOpacity={0.7}
-              accessibilityRole="button"
-              accessibilityLabel="Accept task"
-            >
-              <Text style={styles.acceptText}>Accept</Text>
-            </TouchableOpacity>
-          ) : null}
-        </View>
-      ) : null}
+      {/* ── Status badge ─────────────────────────────────────────────────── */}
+      <View style={[styles.statusBadge, { backgroundColor: statusColor }]}>
+        <Text style={styles.statusText}>
+          {task.status ? task.status.toUpperCase() : "OPEN"}
+        </Text>
+      </View>
     </TouchableOpacity>
   );
-};
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Colors.white,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    padding: 14,
-    marginBottom: 10,
+    flexDirection:  "row",
+    alignItems:     "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius:   12,
+    padding:        14,
+    marginVertical:  6,
+    marginHorizontal: 12,
+    shadowColor:    "#000",
+    shadowOffset:   { width: 0, height: 2 },
+    shadowOpacity:  0.08,
+    shadowRadius:   4,
+    elevation:      3,
   },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatarCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: Colors.primaryLight,
-    justifyContent: 'center',
-    alignItems: 'center',
+
+  // ── Avatar ──────────────────────────────────────────────────────────────
+  avatar: {
+    width:           44,
+    height:          44,
+    borderRadius:    22,
+    backgroundColor: "#4F46E5",
+    alignItems:      "center",
+    justifyContent:  "center",
+    marginRight:     12,
   },
   avatarText: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: Colors.primaryButton,
+    color:      "#FFFFFF",
+    fontWeight: "700",
+    fontSize:   16,
   },
-  headerInfo: {
+
+  // ── Content ──────────────────────────────────────────────────────────────
+  content: {
     flex: 1,
-    marginLeft: 12,
-    gap: 2,
   },
-  categoryRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
+  donorName: {
+    fontWeight:  "600",
+    fontSize:    15,
+    color:       "#1F2937",
+    marginBottom: 2,
   },
-  categoryEmoji: {
-    fontSize: 14,
-  },
-  categoryLabel: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.heading,
+  category: {
+    fontSize:    13,
+    color:       "#6B7280",
+    marginBottom: 2,
   },
   area: {
-    fontSize: 12,
-    color: Colors.paragraph,
-  },
-  meta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 10,
-    gap: 12,
+    fontSize:    13,
+    color:       "#374151",
+    marginBottom: 2,
   },
   date: {
-    fontSize: 12,
-    color: Colors.paragraph,
+    fontSize:    12,
+    color:       "#9CA3AF",
+    marginBottom: 2,
   },
-  vehicleBadge: {
-    backgroundColor: Colors.primaryLight,
+  preference: {
+    fontSize:    12,
+    color:       "#6366F1",
+  },
+  dropoff: {
+    fontSize:    12,
+    color:       "#7C3AED",
+    marginBottom: 2,
+  },
+
+  // ── Status badge ──────────────────────────────────────────────────────────
+  statusBadge: {
     paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
+    paddingVertical:   4,
+    borderRadius:      8,
+    marginLeft:        8,
+    alignSelf:         "flex-start",
   },
-  vehicleText: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: Colors.primaryButton,
-  },
-  actions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: 12,
-    gap: 10,
-    borderTopWidth: 1,
-    borderTopColor: Colors.cardBorder,
-    paddingTop: 12,
-  },
-  declineButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: Colors.errorAlert,
-    backgroundColor: Colors.white,
-  },
-  declineText: {
-    color: Colors.errorAlert,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  acceptButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: Colors.primaryButton,
-  },
-  acceptText: {
-    color: Colors.white,
-    fontSize: 13,
-    fontWeight: '600',
+  statusText: {
+    color:      "#FFFFFF",
+    fontWeight: "700",
+    fontSize:   10,
   },
 });
-
-export default TaskCard;

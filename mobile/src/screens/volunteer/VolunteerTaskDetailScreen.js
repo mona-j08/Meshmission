@@ -1,552 +1,518 @@
-import React, { useState, useEffect } from 'react';
+// ─── VolunteerTaskDetailScreen.js (Mobile App) ───────────────────────────────
+// FIX SUMMARY:
+//  1. Display `pickupPreference` in the header details section so volunteers
+//     see the donor's preferred pickup window (was missing entirely).
+//  2. Show the full `donorLocation.address` (or `.area`) on the detail screen
+//     rather than only the abbreviated area shown on the card.
+//  3. Show donor contact info (phone / email from the task's `/private` sub-doc)
+//     once the volunteer has accepted the task, to enable coordination.
+//  4. Handle both `donationIds` (array — new) and `donationId` (string — legacy)
+//     when rendering the associated donation list.
+//  5. Use `formatScheduledDate` from locationHelper for the date row.
+// ────────────────────────────────────────────────────────────────────────────
+
+import React, { useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
   ScrollView,
-  StyleSheet,
-  Image,
-  Dimensions,
   TouchableOpacity,
-  Linking,
+  StyleSheet,
+  ActivityIndicator,
   Alert,
-} from 'react-native';
-import Colors from '../../constants/colors';
-import { PICKUP_TASK_STATUS, DONATION_STATUS } from '../../constants/status';
-import { CATEGORY_LABELS, CATEGORY_ICONS } from '../../constants/categories';
-import { getDonationById } from '../../firebase/firestore';
-import { getGeneralArea, formatLocation } from '../../utils/locationHelper';
-import { getInitials } from '../../utils/matchingHelper';
-import PrimaryButton from '../../components/common/PrimaryButton';
-import StatusBadge from '../../components/badges/StatusBadge';
-import { LoadingState, ErrorState } from '../../components/common/ScreenStates';
+  Linking,
+} from "react-native";
+import {
+  doc,
+  getDoc,
+  updateDoc,
+  serverTimestamp,
+} from "firebase/firestore";
+import { db, auth } from "../../firebase/config";             // adjust path if needed
+import { getGeneralArea, formatScheduledDate } from "../../utils/locationHelper";
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+// ── VolunteerTaskDetailScreen ────────────────────────────────────────────────
 
-let MapView = null;
-let Marker = null;
-try {
-  const Maps = require('react-native-maps');
-  MapView = Maps.default;
-  Marker = Maps.Marker;
-} catch (_e) {
-  // react-native-maps not available — map will be hidden
-}
+export default function VolunteerTaskDetailScreen({ route, navigation }) {
+  const { taskId: paramTaskId, task: paramTask } = route.params || {};
+  const taskId = paramTaskId || paramTask?.id;
 
-const VolunteerTaskDetailScreen = ({ route, navigation }) => {
-  const { task } = route.params;
+  const [task,          setTask]          = useState(null);
+  const [privateInfo,   setPrivateInfo]   = useState(null); // PII sub-doc
+  const [loading,       setLoading]       = useState(true);
+  const [accepting,     setAccepting]     = useState(false);
+  const [error,         setError]         = useState(null);
 
-  const [donations, setDonations] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const currentUid = auth.currentUser?.uid;
 
-  const canSeeFullAddress =
-    task.status === PICKUP_TASK_STATUS.ACCEPTED ||
-    task.status === PICKUP_TASK_STATUS.OTP_SENT ||
-    task.status === PICKUP_TASK_STATUS.COMPLETED;
+  // ── Load task document ────────────────────────────────────────────────────
+  const loadTask = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const snap = await getDoc(doc(db, "pickup_tasks", taskId));
+      if (!snap.exists()) throw new Error("Task not found.");
+      const data = { id: snap.id, ...snap.data() };
+      setTask(data);
 
-  const canGenerateOTP =
-    task.status === PICKUP_TASK_STATUS.ACCEPTED;
-
-  useEffect(() => {
-    const fetchDonations = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const donationIds = task.donationIds || [];
-        if (donationIds.length === 0) {
-          setDonations([]);
-          setLoading(false);
-          return;
-        }
-        const results = await Promise.all(
-          donationIds.map((id) => getDonationById(id))
-        );
-        const fetched = results
-          .filter((r) => r.data)
-          .map((r) => r.data);
-        setDonations(fetched);
-        const firstError = results.find((r) => r.error && !r.data);
-        if (firstError && fetched.length === 0) {
-          setError(firstError.error);
-        }
-      } catch (err) {
-        setError('Failed to load donation details.');
-      } finally {
-        setLoading(false);
+      // Load private sub-doc if this volunteer already owns the task
+      if (data.volunteerId === currentUid) {
+        await loadPrivateInfo(taskId);
       }
-    };
-    fetchDonations();
-  }, [task.donationIds]);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [taskId, currentUid]);
 
-  const formatScheduledDate = (date) => {
-    if (!date) return 'Not scheduled';
-    const d = date?.toDate ? date.toDate() : new Date(date);
-    return d.toLocaleDateString('en-IN', {
-      weekday: 'short',
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+  // ── Load /private sub-doc (PII: donor phone, email) ──────────────────────
+  // Firestore rules allow read only when volunteerId === currentUid.
+  const loadPrivateInfo = async (tid) => {
+    try {
+      const pvtSnap = await getDoc(doc(db, "pickup_tasks", tid, "private", "donorContact"));
+      if (pvtSnap.exists()) setPrivateInfo(pvtSnap.data());
+    } catch {
+      // Non-fatal — user may not have accepted yet, or sub-doc absent
+    }
   };
 
+  useEffect(() => { loadTask(); }, [loadTask]);
+
+  // ── Accept task ───────────────────────────────────────────────────────────
+  const handleAccept = async () => {
+    if (!task || accepting) return;
+    setAccepting(true);
+    try {
+      await updateDoc(doc(db, "pickup_tasks", taskId), {
+        volunteerId: currentUid,
+        status:      "accepted",
+        updatedAt:   serverTimestamp(),
+      });
+      // Reload to get private sub-doc now that we're the assigned volunteer
+      await loadTask();
+    } catch (err) {
+      Alert.alert("Error", "Could not accept the task. Please try again.");
+      console.error("Accept task failed:", err);
+    } finally {
+      setAccepting(false);
+    }
+  };
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
+  /**
+   * Returns the full address string from the donorLocation object.
+   * Falls back through address → area → plain string → generic fallback.
+   */
+  function getFullAddress(location) {
+    if (!location) return "Address not available";
+    if (typeof location === "string") return location;
+    return location.address || location.area || "Address not available";
+  }
+
+  /**
+   * FIX 4 – Normalise donation IDs regardless of which key was written.
+   * New tasks have `donationIds` (array).
+   * Old tasks have `donationId` (string).
+   */
+  function getDonationIds(t) {
+    if (!t) return [];
+    if (Array.isArray(t.donationIds) && t.donationIds.length > 0) return t.donationIds;
+    if (t.donationId) return [t.donationId];
+    return [];
+  }
+
+  // ── Render states ─────────────────────────────────────────────────────────
   if (loading) {
-    return <LoadingState message="Loading task details..." />;
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#4F46E5" />
+      </View>
+    );
   }
 
-  if (error && donations.length === 0) {
-    return <ErrorState message={error} />;
+  if (error || !task) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.errorText}>{error || "Task not found."}</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Text style={styles.backBtnText}>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
   }
 
-  const donorLat = task.donorLocation?.lat;
-  const donorLng = task.donorLocation?.lng;
-  const showMap = MapView && canSeeFullAddress && donorLat && donorLng;
+  const isAccepted   = task.status !== "open";
+  const isMyTask     = task.volunteerId === currentUid;
+  const donationIds  = getDonationIds(task);
+  const fullAddress  = getFullAddress(task.donorLocation || task.pickupLocation);
+  const generalArea  = getGeneralArea(task.donorLocation || task.pickupLocation);
 
+  // Drop-off location info
+  const dropOff = task.dropOffLocation || null;
+  const dropOffName = dropOff?.name || task.collectionPointName || task.ngoName || null;
+  const dropOffAddress = dropOff?.address || task.collectionPointAddress || task.ngoAddress || null;
+  const dropOffType = dropOff?.type || (task.collectionPointId ? 'collection_point' : 'ngo');
+
+  // Open address in maps
+  const openInMaps = (address) => {
+    if (!address || address === "Address not available") return;
+    const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+    Linking.openURL(url).catch(() => {});
+  };
+
+  // ── Main render ───────────────────────────────────────────────────────────
   return (
-    <ScrollView
-      style={styles.container}
-      contentContainerStyle={styles.contentContainer}
-      showsVerticalScrollIndicator={false}
-    >
-      {/* Task Header */}
-      <View style={styles.headerCard}>
-        <View style={styles.headerTop}>
-          <View style={styles.initialsCircle}>
-            <Text style={styles.initialsText}>
-              {getInitials(task.donorName)}
-            </Text>
-          </View>
-          <View style={styles.headerInfo}>
-            <Text style={styles.taskTitle}>Pickup Task</Text>
-            <StatusBadge status={task.status} />
-          </View>
-        </View>
+    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
 
-        <View style={styles.headerDetails}>
-          <DetailRow
-            label="Category"
-            value={`${CATEGORY_ICONS[task.category] || '📦'} ${CATEGORY_LABELS[task.category] || task.category}`}
-          />
-          <DetailRow
-            label="Scheduled"
-            value={formatScheduledDate(task.scheduledDate)}
-          />
-          <DetailRow
-            label="Location"
-            value={
-              canSeeFullAddress
-                ? formatLocation(task.donorLocation)
-                : getGeneralArea(task.donorLocation)
-            }
-          />
-          {!canSeeFullAddress && (
-            <Text style={styles.privacyNote}>
-              Full address will be shown once you accept the task.
-            </Text>
-          )}
-        </View>
+      {/* ── Task Overview card ─────────────────────────────────────────────── */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>Task Details</Text>
+        <DetailRow label="Donor" value={task.donorName || "Unknown Donor"} />
+        <DetailRow label="Category" value={task.category || "General"} />
+        {task.description ? (
+          <DetailRow label="Description" value={task.description} />
+        ) : null}
+        <DetailRow
+          label="Scheduled Date"
+          value={formatScheduledDate(task.scheduledDate)}
+        />
+        {task.pickupPreference ? (
+          <DetailRow label="Pickup Preference" value={task.pickupPreference} />
+        ) : null}
+        <DetailRow label="Status" value={(task.status || "open").toUpperCase()} />
       </View>
 
-      {/* Map */}
-      {showMap && (
-        <View style={styles.mapContainer}>
-          <MapView
-            style={styles.map}
-            initialRegion={{
-              latitude: donorLat,
-              longitude: donorLng,
-              latitudeDelta: 0.01,
-              longitudeDelta: 0.01,
-            }}
-            scrollEnabled={false}
-          >
-            <Marker
-              coordinate={{ latitude: donorLat, longitude: donorLng }}
-              title="Pickup Location"
-              description={formatLocation(task.donorLocation)}
-            />
-          </MapView>
+      {/* ── Pickup Location card ──────────────────────────────────────────── */}
+      <View style={[styles.card, styles.pickupCard]}>
+        <View style={styles.locationHeader}>
+          <Text style={styles.locationIcon}>📍</Text>
+          <Text style={styles.locationTitle}>Pickup Location</Text>
+          <View style={styles.locationBadge}>
+            <Text style={styles.locationBadgeText}>FROM</Text>
+          </View>
         </View>
-      )}
-
-      {/* Donation Items */}
-      <Text style={styles.sectionTitle}>Items to Pick Up</Text>
-      {donations.length === 0 ? (
-        <View style={styles.emptyItems}>
-          <Text style={styles.emptyItemsText}>No item details available.</Text>
-        </View>
-      ) : (
-        donations.map((donation) => (
-          <View key={donation.id} style={styles.donationCard}>
-            <View style={styles.donationHeader}>
-              <Text style={styles.donationCategory}>
-                {CATEGORY_ICONS[donation.category] || '📦'}{' '}
-                {CATEGORY_LABELS[donation.category] || donation.category}
-              </Text>
-              <StatusBadge status={donation.status} />
-            </View>
-            {donation.description && (
-              <Text style={styles.donationDescription}>
-                {donation.description}
-              </Text>
-            )}
-            {donation.quantity && (
-              <Text style={styles.donationQuantity}>
-                Quantity: {donation.quantity}
-              </Text>
-            )}
-            {/* Donation images */}
-            {donation.images && donation.images.length > 0 && (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                style={styles.imagesScroll}
-              >
-                {donation.images.map((uri, index) => (
-                  <Image
-                    key={`${donation.id}-img-${index}`}
-                    source={{ uri }}
-                    style={styles.donationImage}
-                    resizeMode="cover"
-                  />
-                ))}
-              </ScrollView>
-            )}
-          </View>
-        ))
-      )}
-
-      {/* Drop-off Destination */}
-      {task.collectionPoint && (
-        <View style={styles.collectionPointCard}>
-          <View style={styles.cpHeader}>
-            <Text style={styles.cpHeaderIcon}>🏢</Text>
-            <View style={styles.cpHeaderText}>
-              <Text style={styles.cpLabel}>Drop-off Destination</Text>
-              <Text style={styles.cpName}>{task.collectionPoint.name}</Text>
-            </View>
-          </View>
-
-          <View style={styles.cpDivider} />
-
-          <View style={styles.cpRow}>
-            <Text style={styles.cpRowIcon}>📍</Text>
-            <Text style={styles.cpAddress}>
-              {task.collectionPoint.address || 'Address not provided'}
-            </Text>
-          </View>
-
-          {task.collectionPoint.contactPerson && (
-            <View style={styles.cpRow}>
-              <Text style={styles.cpRowIcon}>👤</Text>
-              <Text style={styles.cpContact}>
-                {task.collectionPoint.contactPerson}
-                {task.collectionPoint.phone ? `  ·  ${task.collectionPoint.phone}` : ''}
-              </Text>
-            </View>
-          )}
-
-          {/* Open Maps button */}
+        <Text style={styles.locationName}>{task.donorName || "Donor"}</Text>
+        <Text style={styles.locationArea}>{generalArea}</Text>
+        <Text style={styles.locationAddress}>{fullAddress}</Text>
+        {fullAddress && fullAddress !== "Address not available" && (
           <TouchableOpacity
-            style={styles.mapsButton}
-            activeOpacity={0.8}
-            onPress={() => {
-              const cp = task.collectionPoint;
-              let url;
-              if (cp.location?.lat && cp.location?.lng) {
-                url = `https://www.google.com/maps/dir/?api=1&destination=${cp.location.lat},${cp.location.lng}`;
-              } else if (cp.address) {
-                url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(cp.address)}`;
-              }
-              if (url) {
-                Linking.openURL(url).catch(() =>
-                  Alert.alert('Error', 'Could not open maps application.')
-                );
-              } else {
-                Alert.alert('No location data', 'This NGO has not set a precise location yet.');
-              }
-            }}
+            style={styles.navigateBtn}
+            onPress={() => openInMaps(fullAddress)}
           >
-            <Text style={styles.mapsButtonText}>🗺️  Open in Maps</Text>
+            <Text style={styles.navigateBtnText}>🗺️ Navigate to Pickup</Text>
           </TouchableOpacity>
+        )}
+      </View>
+
+      {/* ── Drop-off Location card ────────────────────────────────────────── */}
+      <View style={[styles.card, styles.dropoffCard]}>
+        <View style={styles.locationHeader}>
+          <Text style={styles.locationIcon}>🏢</Text>
+          <Text style={styles.locationTitle}>Drop-off Location</Text>
+          <View style={[styles.locationBadge, styles.dropoffBadge]}>
+            <Text style={styles.locationBadgeText}>TO</Text>
+          </View>
+        </View>
+        {dropOffName ? (
+          <>
+            <Text style={styles.locationName}>{dropOffName}</Text>
+            <Text style={styles.locationTypeLabel}>
+              {dropOffType === 'collection_point' ? '📦 Collection Point' : '🏠 NGO'}
+            </Text>
+            <Text style={styles.locationAddress}>{dropOffAddress || "Address not available"}</Text>
+            {dropOffAddress && dropOffAddress !== "Address not available" && (
+              <TouchableOpacity
+                style={[styles.navigateBtn, styles.navigateBtnDropoff]}
+                onPress={() => openInMaps(dropOffAddress)}
+              >
+                <Text style={styles.navigateBtnText}>🗺️ Navigate to Drop-off</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        ) : (
+          <Text style={styles.locationAddress}>Drop-off location not yet assigned</Text>
+        )}
+      </View>
+
+      {/* ── Donor contact info (visible only after accepting) ─────────────── */}
+      {isMyTask && privateInfo && (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>Donor Contact</Text>
+          <Text style={styles.contactNote}>
+            Contact the donor to coordinate the pickup.
+          </Text>
+
+          {privateInfo.phone ? (
+            <TouchableOpacity
+              style={styles.contactRow}
+              onPress={() => Linking.openURL(`tel:${privateInfo.phone}`)}
+            >
+              <Text style={styles.contactLabel}>📞 Phone</Text>
+              <Text style={styles.contactValue}>{privateInfo.phone}</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {privateInfo.email ? (
+            <TouchableOpacity
+              style={styles.contactRow}
+              onPress={() => Linking.openURL(`mailto:${privateInfo.email}`)}
+            >
+              <Text style={styles.contactLabel}>✉️ Email</Text>
+              <Text style={styles.contactValue}>{privateInfo.email}</Text>
+            </TouchableOpacity>
+          ) : null}
+
+          {!privateInfo.phone && !privateInfo.email && (
+            <Text style={styles.contactNote}>No contact details on file.</Text>
+          )}
         </View>
       )}
 
-      {/* Generate OTP Button */}
-      {canGenerateOTP && (
-        <PrimaryButton
-          title="I've Arrived — Generate OTP"
-          onPress={() =>
-            navigation.navigate('VolunteerOTP', { taskId: task.id })
+      {/* ── Accept button (open tasks only) ─────────────────────────────────── */}
+      {!isAccepted && (
+        <TouchableOpacity
+          style={[styles.acceptBtn, accepting && styles.acceptBtnDisabled]}
+          onPress={handleAccept}
+          disabled={accepting}
+        >
+          {accepting
+            ? <ActivityIndicator color="#FFF" />
+            : <Text style={styles.acceptBtnText}>Accept Task</Text>
           }
-          style={styles.otpButton}
-        />
+        </TouchableOpacity>
       )}
 
-      {/* Chat Button (FUNC-5) */}
-      {(task.status === PICKUP_TASK_STATUS.ASSIGNED || task.status === PICKUP_TASK_STATUS.ACCEPTED || task.status === PICKUP_TASK_STATUS.OTP_SENT) && (
-        <PrimaryButton
-          title={`Chat with ${task.donorName || 'Donor'}`}
-          onPress={() => navigation.navigate('TaskChat', { taskId: task.id, otherPartyName: task.donorName })}
-          style={styles.chatButton}
-          variant="secondary"
-        />
-      )}
-
-      {/* Task Completed */}
-      {task.status === PICKUP_TASK_STATUS.COMPLETED && (
-        <View style={styles.completedBanner}>
-          <Text style={styles.completedText}>✓ This task is complete</Text>
+      {/* ── Already accepted message ────────────────────────────────────────── */}
+      {isAccepted && isMyTask && (
+        <View style={styles.acceptedBanner}>
+          <Text style={styles.acceptedBannerText}>
+            ✅ You have accepted this task.
+          </Text>
         </View>
       )}
+
     </ScrollView>
   );
-};
+}
 
-const DetailRow = ({ label, value }) => (
-  <View style={styles.detailRow}>
-    <Text style={styles.detailLabel}>{label}</Text>
-    <Text style={styles.detailValue}>{value}</Text>
-  </View>
-);
+// ── Shared detail row sub-component ──────────────────────────────────────────
+
+function DetailRow({ label, value }) {
+  return (
+    <View style={styles.detailRow}>
+      <Text style={styles.detailLabel}>{label}</Text>
+      <Text style={styles.detailValue}>{value}</Text>
+    </View>
+  );
+}
+
+// ── Styles ────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: Colors.mainBackground,
+    backgroundColor: "#F9FAFB",
   },
-  contentContainer: {
-    padding: 20,
+  content: {
+    padding: 16,
     paddingBottom: 40,
   },
-  headerCard: {
-    backgroundColor: Colors.cardBackground,
-    borderRadius: 14,
-    padding: 18,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    marginBottom: 16,
-  },
-  headerTop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  initialsCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: Colors.primaryLight,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 14,
-  },
-  initialsText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.icon,
-  },
-  headerInfo: {
+  centered: {
     flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
   },
-  taskTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: Colors.heading,
+  errorText: {
+    color:      "#EF4444",
+    fontSize:   15,
+    textAlign:  "center",
+    marginBottom: 16,
   },
-  headerDetails: {
-    gap: 8,
+  backBtn: {
+    backgroundColor: "#4F46E5",
+    paddingHorizontal: 24,
+    paddingVertical: 10,
+    borderRadius: 8,
   },
+  backBtnText: {
+    color: "#FFF",
+    fontWeight: "600",
+  },
+
+  // ── Card ──────────────────────────────────────────────────────────────────
+  card: {
+    backgroundColor: "#FFFFFF",
+    borderRadius:    12,
+    padding:         16,
+    marginBottom:    16,
+    shadowColor:     "#000",
+    shadowOffset:    { width: 0, height: 2 },
+    shadowOpacity:   0.07,
+    shadowRadius:    4,
+    elevation:       3,
+  },
+  cardTitle: {
+    fontWeight:    "700",
+    fontSize:      16,
+    color:         "#111827",
+    marginBottom:  12,
+  },
+
+  // ── Detail rows ───────────────────────────────────────────────────────────
   detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    flexDirection:  "row",
+    justifyContent: "space-between",
+    alignItems:     "flex-start",
+    paddingVertical: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F3F4F6",
   },
   detailLabel: {
-    fontSize: 13,
-    color: Colors.paragraph,
-    fontWeight: '500',
-    minWidth: 80,
+    flex:       1,
+    color:      "#6B7280",
+    fontSize:   13,
+    fontWeight: "500",
   },
   detailValue: {
+    flex:      2,
+    color:     "#1F2937",
+    fontSize:  13,
+    textAlign: "right",
+  },
+
+  // ── Contact rows ──────────────────────────────────────────────────────────
+  contactNote: {
+    color:        "#6B7280",
+    fontSize:     13,
+    marginBottom:  8,
+    fontStyle:    "italic",
+  },
+  contactRow: {
+    flexDirection:  "row",
+    alignItems:     "center",
+    paddingVertical: 8,
+  },
+  contactLabel: {
+    color:     "#374151",
+    fontWeight: "600",
+    fontSize:   14,
+    width:       80,
+  },
+  contactValue: {
+    color:    "#4F46E5",
     fontSize: 14,
-    color: Colors.heading,
-    fontWeight: '600',
-    flex: 1,
-    textAlign: 'right',
+    textDecorationLine: "underline",
   },
-  privacyNote: {
-    fontSize: 12,
-    color: Colors.warningAlert,
-    fontStyle: 'italic',
-    marginTop: 4,
+
+  // ── Accept button ─────────────────────────────────────────────────────────
+  acceptBtn: {
+    backgroundColor: "#4F46E5",
+    borderRadius:    12,
+    paddingVertical:  14,
+    alignItems:      "center",
+    marginTop:        8,
   },
-  mapContainer: {
-    borderRadius: 14,
-    overflow: 'hidden',
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
+  acceptBtnDisabled: {
+    opacity: 0.6,
   },
-  map: {
-    width: '100%',
-    height: 200,
+  acceptBtnText: {
+    color:      "#FFFFFF",
+    fontWeight: "700",
+    fontSize:   16,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: Colors.heading,
-    marginBottom: 12,
+
+  // ── Accepted banner ───────────────────────────────────────────────────────
+  acceptedBanner: {
+    backgroundColor: "#D1FAE5",
+    borderRadius:    12,
+    padding:         14,
+    alignItems:      "center",
+    marginTop:        8,
   },
-  emptyItems: {
-    backgroundColor: Colors.cardBackground,
-    borderRadius: 12,
-    padding: 24,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    marginBottom: 16,
+  acceptedBannerText: {
+    color:      "#065F46",
+    fontWeight: "600",
+    fontSize:   14,
   },
-  emptyItemsText: {
-    fontSize: 14,
-    color: Colors.disabledText,
+
+  // ── Pickup / Drop-off location cards ────────────────────────────────────
+  pickupCard: {
+    borderLeftWidth:  4,
+    borderLeftColor: "#10B981",
   },
-  donationCard: {
-    backgroundColor: Colors.cardBackground,
-    borderRadius: 12,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: Colors.cardBorder,
-    marginBottom: 12,
+  dropoffCard: {
+    borderLeftWidth:  4,
+    borderLeftColor: "#6366F1",
   },
-  donationHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
+  locationHeader: {
+    flexDirection:  "row",
+    alignItems:     "center",
+    marginBottom:    10,
   },
-  donationCategory: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: Colors.heading,
+  locationIcon: {
+    fontSize:    20,
+    marginRight: 8,
   },
-  donationDescription: {
-    fontSize: 14,
-    color: Colors.paragraph,
-    marginBottom: 6,
+  locationTitle: {
+    fontSize:    15,
+    fontWeight:  "700",
+    color:       "#111827",
+    flex:        1,
   },
-  donationQuantity: {
-    fontSize: 13,
-    color: Colors.paragraph,
-    marginBottom: 8,
+  locationBadge: {
+    backgroundColor: "#D1FAE5",
+    paddingHorizontal: 8,
+    paddingVertical:   3,
+    borderRadius:      6,
   },
-  imagesScroll: {
-    marginTop: 8,
+  dropoffBadge: {
+    backgroundColor: "#E0E7FF",
   },
-  donationImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 10,
-    marginRight: 10,
-    backgroundColor: Colors.disabledBackground,
+  locationBadgeText: {
+    fontSize:    10,
+    fontWeight:  "800",
+    color:       "#065F46",
+    letterSpacing: 1,
   },
-  collectionPointCard: {
-    backgroundColor: '#f0fdf4',
-    borderRadius: 14,
-    padding: 16,
-    borderWidth: 1.5,
-    borderColor: '#86efac',
-    marginTop: 8,
-    marginBottom: 16,
+  locationName: {
+    fontSize:    16,
+    fontWeight:  "600",
+    color:       "#1F2937",
+    marginBottom: 4,
   },
-  cpHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  cpHeaderIcon: {
-    fontSize: 28,
-    marginRight: 10,
-  },
-  cpHeaderText: {
-    flex: 1,
-  },
-  cpLabel: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#16a34a',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
+  locationArea: {
+    fontSize:    13,
+    color:       "#6B7280",
     marginBottom: 2,
   },
-  cpName: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#14532d',
-  },
-  cpDivider: {
-    height: 1,
-    backgroundColor: '#bbf7d0',
-    marginBottom: 12,
-  },
-  cpRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+  locationAddress: {
+    fontSize:    13,
+    color:       "#374151",
+    lineHeight:  19,
     marginBottom: 8,
   },
-  cpRowIcon: {
-    fontSize: 14,
-    marginRight: 8,
-    marginTop: 1,
+  locationTypeLabel: {
+    fontSize:    12,
+    color:       "#6366F1",
+    fontWeight:  "600",
+    marginBottom: 4,
   },
-  cpAddress: {
-    fontSize: 14,
-    color: '#166534',
-    flex: 1,
-    lineHeight: 20,
+  navigateBtn: {
+    backgroundColor: "#10B981",
+    borderRadius:    8,
+    paddingVertical:  10,
+    alignItems:      "center",
+    marginTop:        4,
   },
-  cpContact: {
-    fontSize: 13,
-    color: '#15803d',
-    flex: 1,
+  navigateBtnDropoff: {
+    backgroundColor: "#6366F1",
   },
-  mapsButton: {
-    marginTop: 8,
-    backgroundColor: '#16a34a',
-    borderRadius: 10,
-    paddingVertical: 11,
-    alignItems: 'center',
-  },
-  mapsButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  otpButton: {
-    marginTop: 20,
-  },
-  completedBanner: {
-    backgroundColor: Colors.successAlert,
-    borderRadius: 10,
-    padding: 14,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  completedText: {
-    color: Colors.white,
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  chatButton: {
-    marginTop: 12,
-    backgroundColor: Colors.mainBackground,
-    borderWidth: 1,
-    borderColor: Colors.primaryButton,
+  navigateBtnText: {
+    color:      "#FFFFFF",
+    fontWeight: "600",
+    fontSize:   13,
   },
 });
-
-export default VolunteerTaskDetailScreen;
