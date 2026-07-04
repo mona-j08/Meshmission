@@ -21,7 +21,7 @@ import { LoadingState, ErrorState, EmptyState } from '../../components/common/Sc
 
 const NGODeliveriesScreen = () => {
   const { user } = useAuth();
-  const { deliveries, loading, error, confirmDelivery } = useNGO(user?.uid);
+  const { deliveries, assignedTasks, loading, error, confirmDelivery } = useNGO(user?.uid);
   const [activeTab, setActiveTab] = useState('scheduled'); // 'scheduled' | 'completed'
   
   // Confirmation states
@@ -29,15 +29,30 @@ const NGODeliveriesScreen = () => {
   const [deliveryToConfirm, setDeliveryToConfirm] = useState(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
 
-  // Filter deliveries based on status
-  const scheduledDeliveries = deliveries.filter(
-    (d) => d.status !== DELIVERY_STATUS.DELIVERED
-  );
-  const completedDeliveries = deliveries.filter(
+  // Scheduled tab: show assigned tasks that are not yet completed
+  const scheduledDeliveries = (assignedTasks || [])
+    .filter((task) => task.status !== 'completed')
+    .map((task) => ({
+      id: task.id,
+      donationCategory: task.category,
+      quantity: 'TBD', // Tasks don't natively store quantity, would need to fetch donation
+      volunteerName: task.status === 'open' ? 'Awaiting Volunteer' : 'Assigned Volunteer',
+      volunteerPhone: null,
+      vehicleType: null,
+      createdAt: task.createdAt,
+      status: task.status, // 'open', 'assigned', 'picked_up', 'otp_sent'
+      isTask: true,
+    }));
+
+  // Completed tab: show actual delivery documents (which are created upon completion)
+  const completedDeliveries = (deliveries || []).filter(
     (d) => d.status === DELIVERY_STATUS.DELIVERED
   );
 
   const handleConfirmPress = (delivery) => {
+    // We can only confirm actual deliveries, not tasks directly
+    // Wait, if it's a task, the volunteer confirms it on their end.
+    // The NGO confirms receipt? Actually, the NGO shouldn't confirm a task.
     setDeliveryToConfirm(delivery);
     setConfirmModalVisible(true);
   };
@@ -136,7 +151,13 @@ const NGODeliveriesScreen = () => {
         </View>
 
         {/* Action Button */}
-        {!isCompleted ? (
+        {item.isTask ? (
+          <View style={[styles.completedBanner, { backgroundColor: '#EFF6FF', borderColor: '#3B82F6' }]}>
+            <Text style={[styles.completedBannerText, { color: '#3B82F6' }]}>
+              {item.status === 'open' ? '⏳ Awaiting Volunteer Assignment' : '🚚 Volunteer Assigned, Awaiting Pickup'}
+            </Text>
+          </View>
+        ) : !isCompleted ? (
           <PrimaryButton
             title="Confirm Package Received"
             onPress={() => handleConfirmPress(item)}

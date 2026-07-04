@@ -8,6 +8,7 @@ import {
   updateRequirement as updateReq,
   deleteRequirement as deleteReq,
   subscribeToNGODeliveries,
+  subscribeToNGOTasks,
   confirmDelivery as confirmDeliveryFn,
 } from '../firebase/firestore';
 
@@ -19,6 +20,7 @@ export const useNGO = (ngoId) => {
   const [profile, setProfile] = useState(null);
   const [requirements, setRequirements] = useState([]);
   const [deliveries, setDeliveries] = useState([]);
+  const [assignedTasks, setAssignedTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -83,6 +85,24 @@ export const useNGO = (ngoId) => {
       (err) => {
         setError(err.message || 'Failed to fetch NGO deliveries');
         setLoading(false);
+      }
+    );
+
+    return unsubscribe;
+  }, [ngoId]);
+
+  // ── NGO Assigned Tasks Listener ────────────────────────────
+  useEffect(() => {
+    if (!ngoId) return;
+
+    const unsubscribe = subscribeToNGOTasks(
+      ngoId,
+      (data) => {
+        setAssignedTasks(data);
+        setError(null);
+      },
+      (err) => {
+        setError(err.message || 'Failed to fetch assigned tasks');
       }
     );
 
@@ -180,6 +200,7 @@ export const useNGO = (ngoId) => {
     profile,
     requirements,
     deliveries,
+    assignedTasks,
     loading,
     error,
     saveProfile,

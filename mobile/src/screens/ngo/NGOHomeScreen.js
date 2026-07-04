@@ -20,7 +20,7 @@ import StatusBadge from '../../components/badges/StatusBadge';
 
 const NGOHomeScreen = ({ navigation }) => {
   const { user, signOut } = useAuth();
-  const { profile, requirements, deliveries, loading, error } = useNGO(user?.uid);
+  const { profile, requirements, deliveries, assignedTasks, loading, error } = useNGO(user?.uid);
   const [unreadCount, setUnreadCount] = useState(0);
 
   // Real-time notifications count
@@ -57,16 +57,28 @@ const NGOHomeScreen = ({ navigation }) => {
 
   // Derived stats
   const activeRequirements = requirements.length;
-  const pendingDeliveries = deliveries.filter(
+  
+  // Tasks that are scheduled for this NGO but not yet completed
+  const scheduledTasks = (assignedTasks || []).filter(t => t.status !== 'completed');
+
+  const pendingDeliveriesCount = deliveries.filter(
     (d) => d.status !== DELIVERY_STATUS.DELIVERED
-  ).length;
-  const completedDeliveries = deliveries.filter(
+  ).length + scheduledTasks.length;
+
+  const completedDeliveriesCount = deliveries.filter(
     (d) => d.status === DELIVERY_STATUS.DELIVERED
   ).length;
 
-  const recentDeliveries = deliveries
-    .filter((d) => d.status !== DELIVERY_STATUS.DELIVERED)
-    .slice(0, 3);
+  // Combine active tasks and any non-delivered actual deliveries (if any exist)
+  const recentDeliveries = [
+    ...scheduledTasks.map(t => ({
+      ...t,
+      isTask: true,
+      donationCategory: t.category,
+      volunteerName: t.status === 'open' ? 'Awaiting Volunteer' : 'Assigned Volunteer',
+    })),
+    ...deliveries.filter((d) => d.status !== DELIVERY_STATUS.DELIVERED)
+  ].slice(0, 3);
 
   const displayName = profile?.ngoName || profile?.name || user?.displayName || 'MeshMission NGO';
 
@@ -104,13 +116,13 @@ const NGOHomeScreen = ({ navigation }) => {
           </View>
           <View style={styles.statCard}>
             <Text style={[styles.statValue, { color: Colors.warningAlert }]}>
-              {pendingDeliveries}
+              {pendingDeliveriesCount}
             </Text>
             <Text style={styles.statLabel}>Pending Deliveries</Text>
           </View>
           <View style={styles.statCard}>
             <Text style={[styles.statValue, { color: Colors.successAlert }]}>
-              {completedDeliveries}
+              {completedDeliveriesCount}
             </Text>
             <Text style={styles.statLabel}>Completed</Text>
           </View>

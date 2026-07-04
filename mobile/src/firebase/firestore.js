@@ -769,6 +769,23 @@ export const getVolunteerDeliveries = async (volunteerId) => {
   }
 };
 
+export const subscribeToNGOTasks = (ngoId, callback, onError) => {
+  const q = query(
+    collection(db, COLLECTIONS.PICKUP_TASKS),
+    where('matchedNgoId', '==', ngoId),
+    orderBy('createdAt', 'desc')
+  );
+  return onSnapshot(
+    q,
+    (snap) => {
+      callback(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+    },
+    (error) => {
+      if (onError) onError(new Error(`[firestore:subscribeToNGOTasks] ${error.message}`));
+    }
+  );
+};
+
 export const subscribeToNGODeliveries = (ngoId, callback, onError) => {
   const q = query(
     collection(db, COLLECTIONS.DELIVERIES),
