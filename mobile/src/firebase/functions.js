@@ -62,19 +62,7 @@ export const setUserRole = async (userId, role) => {
   return await callFunction('setUserRole', { userId, role });
 };
 
-/**
- * Generate pickup OTP (called by volunteer)
- */
-export const generatePickupOTP = async (taskId) => {
-  return await callFunction('generatePickupOTP', { taskId });
-};
 
-/**
- * Verify pickup OTP (called by volunteer)
- */
-export const verifyPickupOTP = async (taskId, otp) => {
-  return await callFunction('verifyPickupOTP', { taskId, otp });
-};
 
 /**
  * Notify donor of donation verification approval

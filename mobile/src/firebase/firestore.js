@@ -58,7 +58,7 @@ const stripPrivacyForUnacceptedTasks = (tasks) => {
   return tasks.map((task) => {
     const isAccepted =
       task.status === PICKUP_TASK_STATUS.ACCEPTED ||
-      task.status === PICKUP_TASK_STATUS.OTP_SENT ||
+      task.status === PICKUP_TASK_STATUS.PICKED_UP ||
       task.status === PICKUP_TASK_STATUS.COMPLETED;
 
     if (!isAccepted) {

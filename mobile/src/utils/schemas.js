@@ -234,25 +234,31 @@ export const createPickupTaskDoc = ({
 
 export const createDeliveryDoc = ({
   volunteerId,
-  ngoId,
+  taskId = null,
+  ngoId = null,
   donationIds = [],
   items = [],
   collectionPointId = null,
+  deliveredTo = null,
+  deliveryLocation = null,
   notes = null,
+  status = DELIVERY_STATUS.SCHEDULED,
 }) => {
   requireField(volunteerId, 'volunteerId', 'createDeliveryDoc');
-  requireField(ngoId, 'ngoId', 'createDeliveryDoc');
 
   return {
     volunteerId,
+    taskId,
     ngoId,
     donationIds,
     items,
     collectionPointId,
+    deliveredTo,
+    deliveryLocation,
     notes,
-    status: DELIVERY_STATUS.SCHEDULED,
+    status,
     scheduledDate: null,
-    deliveredAt: null,
+    deliveredAt: status === DELIVERY_STATUS.DELIVERED ? serverTimestamp() : null,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };

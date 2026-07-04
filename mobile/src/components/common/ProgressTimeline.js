@@ -14,7 +14,7 @@ import { DONATION_STATUS } from '../../constants/status';
 const TIMELINE_STEPS = [
   { key: 'uploaded', label: 'Uploaded', statuses: [DONATION_STATUS.UPLOADED] },
   { key: 'verified', label: 'Verified', statuses: [DONATION_STATUS.PENDING, DONATION_STATUS.APPROVED] },
-  { key: 'assigned', label: 'Assigned', statuses: [DONATION_STATUS.ASSIGNED, DONATION_STATUS.OTP_VERIFIED] },
+  { key: 'assigned', label: 'Assigned', statuses: [DONATION_STATUS.ASSIGNED, DONATION_STATUS.PICKED_UP] },
   { key: 'picked_up', label: 'Picked Up', statuses: [DONATION_STATUS.IN_TRANSIT] },
   { key: 'delivered', label: 'Delivered', statuses: [DONATION_STATUS.DELIVERED] },
 ];

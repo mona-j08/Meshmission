@@ -1,4 +1,4 @@
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
@@ -9,83 +9,22 @@ import {
   Platform,
   ScrollView,
   SafeAreaView,
-  ActivityIndicator,
 } from 'react-native';
-import { FirebaseRecaptchaVerifierModal } from 'expo-firebase-recaptcha';
 import Colors from '../../constants/colors';
 import { useAuth } from '../../hooks/useAuth';
 import PrimaryButton from '../../components/common/PrimaryButton';
-import OTPInput from '../../components/forms/OTPInput';
 
 export default function LoginScreen({ navigation }) {
-  const { login, sendOTP, verifyOTP, loading: authLoading, error: authError, setError } = useAuth();
+  const { login, loading: authLoading, error: authError, setError } = useAuth();
 
-  // Mode: 'phone' or 'email'
-  const [loginMode, setLoginMode] = useState('phone');
-  
-  // Phone auth states
-  const [phoneNumber, setPhoneNumber] = useState('+91');
-  const [verificationId, setVerificationId] = useState(null);
-  const [otpCode, setOtpCode] = useState('');
-  
   // Email auth states
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  
+  const [showPassword, setShowPassword] = useState(false);
+
   // Local loading & UI errors
   const [localLoading, setLocalLoading] = useState(false);
   const [localError, setLocalError] = useState(null);
-
-  const recaptchaVerifier = useRef(null);
-
-  const handleSendOTP = async () => {
-    if (!phoneNumber || phoneNumber.trim().length < 10) {
-      setLocalError('Please enter a valid phone number with country code.');
-      return;
-    }
-    
-    setLocalError(null);
-    setError(null);
-    setLocalLoading(true);
-
-    try {
-      const { verificationId: verId, error } = await sendOTP(
-        phoneNumber,
-        recaptchaVerifier.current
-      );
-      if (error) {
-        setLocalError(error);
-      } else {
-        setVerificationId(verId);
-      }
-    } catch (err) {
-      setLocalError(err.message);
-    } finally {
-      setLocalLoading(false);
-    }
-  };
-
-  const handleVerifyOTP = async () => {
-    if (!otpCode || otpCode.length < 6) {
-      setLocalError('Please enter the 6-digit verification code.');
-      return;
-    }
-
-    setLocalError(null);
-    setError(null);
-    setLocalLoading(true);
-
-    try {
-      const { user, error } = await verifyOTP(verificationId, otpCode);
-      if (error) {
-        setLocalError(error);
-      }
-    } catch (err) {
-      setLocalError(err.message);
-    } finally {
-      setLocalLoading(false);
-    }
-  };
 
   const handleEmailLogin = async () => {
     if (!email || !password) {
@@ -109,24 +48,11 @@ export default function LoginScreen({ navigation }) {
     }
   };
 
-  const toggleLoginMode = () => {
-    setLoginMode(loginMode === 'phone' ? 'email' : 'phone');
-    setLocalError(null);
-    setError(null);
-    setVerificationId(null);
-    setOtpCode('');
-  };
-
   const displayError = localError || authError;
   const isLoading = localLoading || authLoading;
 
   return (
     <SafeAreaView style={styles.container}>
-      <FirebaseRecaptchaVerifierModal
-        ref={recaptchaVerifier}
-        firebaseConfig={require('../../firebase/config').firebaseConfig}
-        attemptInvisibleVerification={false}
-      />
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.keyboardView}
@@ -142,9 +68,7 @@ export default function LoginScreen({ navigation }) {
 
           {/* Form Container */}
           <View style={styles.formContainer}>
-            <Text style={styles.formTitle}>
-              {loginMode === 'phone' ? (verificationId ? 'Enter Verification Code' : 'Sign In with Phone') : 'Sign In with Email'}
-            </Text>
+            <Text style={styles.formTitle}>Sign In</Text>
 
             {displayError && (
               <View style={styles.errorBox}>
@@ -152,114 +76,45 @@ export default function LoginScreen({ navigation }) {
               </View>
             )}
 
-            {loginMode === 'phone' ? (
-              // Phone Authentication Mode
-              !verificationId ? (
-                // Step 1: Send OTP
-                <View>
-                  <Text style={styles.label}>Mobile Number</Text>
-                  <View style={styles.inputContainer}>
-                    <Text style={styles.inputPrefix}>📞</Text>
-                    <TextInput
-                      style={styles.input}
-                      placeholder="e.g. +919876543210"
-                      placeholderTextColor={Colors.disabledText}
-                      value={phoneNumber}
-                      onChangeText={setPhoneNumber}
-                      keyboardType="phone-pad"
-                      autoCapitalize="none"
-                      autoCorrect={false}
-                    />
-                  </View>
-                  <Text style={styles.hintText}>
-                    Make sure to include your country code (e.g. +91 for India).
-                  </Text>
-                  
-                  <PrimaryButton
-                    title="Send Verification Code"
-                    onPress={handleSendOTP}
-                    loading={isLoading}
-                    style={styles.actionButton}
-                  />
-                </View>
-              ) : (
-                // Step 2: Verify OTP
-                <View>
-                  <Text style={styles.label}>Enter 6-Digit OTP sent to {phoneNumber}</Text>
-                  <View style={styles.otpWrapper}>
-                    <OTPInput
-                      length={6}
-                      value={otpCode}
-                      onChange={setOtpCode}
-                      error={!!displayError}
-                    />
-                  </View>
+            <Text style={styles.label}>Email Address</Text>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputPrefix}>✉️</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="name@example.com"
+                placeholderTextColor={Colors.disabledText}
+                value={email}
+                onChangeText={setEmail}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
 
-                  <View style={styles.otpActions}>
-                    <TouchableOpacity onPress={() => setVerificationId(null)} disabled={isLoading}>
-                      <Text style={styles.otpBackText}>← Change Phone Number</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={handleSendOTP} disabled={isLoading}>
-                      <Text style={styles.otpResendText}>Resend OTP</Text>
-                    </TouchableOpacity>
-                  </View>
+            <Text style={styles.label}>Password</Text>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputPrefix}>🔒</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Enter password"
+                placeholderTextColor={Colors.disabledText}
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              <TouchableOpacity onPress={() => setShowPassword(!showPassword)}>
+                <Text style={styles.showHideText}>{showPassword ? 'Hide' : 'Show'}</Text>
+              </TouchableOpacity>
+            </View>
 
-                  <PrimaryButton
-                    title="Verify & Sign In"
-                    onPress={handleVerifyOTP}
-                    loading={isLoading}
-                    style={styles.actionButton}
-                  />
-                </View>
-              )
-            ) : (
-              // Email Authentication Mode
-              <View>
-                <Text style={styles.label}>Email Address</Text>
-                <View style={styles.inputContainer}>
-                  <Text style={styles.inputPrefix}>✉️</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="name@example.com"
-                    placeholderTextColor={Colors.disabledText}
-                    value={email}
-                    onChangeText={setEmail}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-
-                <Text style={styles.label}>Password</Text>
-                <View style={styles.inputContainer}>
-                  <Text style={styles.inputPrefix}>🔒</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Enter password"
-                    placeholderTextColor={Colors.disabledText}
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                  />
-                </View>
-
-                <PrimaryButton
-                  title="Sign In"
-                  onPress={handleEmailLogin}
-                  loading={isLoading}
-                  style={styles.actionButton}
-                />
-              </View>
-            )}
-
-            {/* Toggle Login Mode */}
-            <TouchableOpacity onPress={toggleLoginMode} style={styles.toggleModeButton}>
-              <Text style={styles.toggleModeText}>
-                {loginMode === 'phone' ? 'Switch to Email Sign In' : 'Switch to Phone OTP Sign In'}
-              </Text>
-            </TouchableOpacity>
+            <PrimaryButton
+              title="Sign In"
+              onPress={handleEmailLogin}
+              loading={isLoading}
+              style={styles.actionButton}
+            />
           </View>
 
           {/* Bottom Link to Register */}
@@ -351,12 +206,11 @@ const styles = StyleSheet.create({
     color: Colors.heading,
     fontSize: 15,
   },
-  hintText: {
-    fontSize: 12,
-    color: Colors.paragraph,
-    marginTop: -8,
-    marginBottom: 20,
-    lineHeight: 16,
+  showHideText: {
+    color: Colors.primaryButton,
+    fontWeight: '600',
+    fontSize: 13,
+    paddingLeft: 8,
   },
   errorBox: {
     backgroundColor: Colors.errorAlert + '15',
@@ -372,37 +226,8 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textAlign: 'center',
   },
-  otpWrapper: {
-    alignItems: 'center',
-    marginVertical: 16,
-  },
-  otpActions: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 24,
-  },
-  otpBackText: {
-    color: Colors.primaryButton,
-    fontWeight: '600',
-    fontSize: 13,
-  },
-  otpResendText: {
-    color: Colors.primaryButton,
-    fontWeight: '600',
-    fontSize: 13,
-  },
   actionButton: {
     marginTop: 8,
-  },
-  toggleModeButton: {
-    alignItems: 'center',
-    marginTop: 20,
-    paddingVertical: 8,
-  },
-  toggleModeText: {
-    color: Colors.primaryButton,
-    fontSize: 14,
-    fontWeight: '600',
   },
   footer: {
     flexDirection: 'row',

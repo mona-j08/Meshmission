@@ -20,12 +20,12 @@ const STATUS_COLOR_MAP = {
   [DONATION_STATUS.REJECTED]: Colors.errorAlert,
   [DONATION_STATUS.ASSIGNED]: Colors.primaryButton,
   [DONATION_STATUS.IN_TRANSIT]: Colors.primaryButton,
-  [DONATION_STATUS.OTP_VERIFIED]: Colors.primaryButton,
+  [DONATION_STATUS.PICKED_UP]: Colors.primaryButton,
 
   // Pickup task statuses
   [PICKUP_TASK_STATUS.ASSIGNED]: Colors.primaryButton,
   [PICKUP_TASK_STATUS.ACCEPTED]: Colors.primaryButton,
-  [PICKUP_TASK_STATUS.OTP_SENT]: Colors.warningAlert,
+  [PICKUP_TASK_STATUS.PICKED_UP]: Colors.primaryButton,
   [PICKUP_TASK_STATUS.COMPLETED]: Colors.successAlert,
   [PICKUP_TASK_STATUS.DECLINED]: Colors.errorAlert,
 
@@ -41,11 +41,11 @@ const STATUS_LABEL_MAP = {
   [DONATION_STATUS.REJECTED]: 'Rejected',
   [DONATION_STATUS.ASSIGNED]: 'Assigned',
   [DONATION_STATUS.IN_TRANSIT]: 'In Transit',
-  [DONATION_STATUS.OTP_VERIFIED]: 'OTP Verified',
+  [DONATION_STATUS.PICKED_UP]: 'Picked Up',
 
   [PICKUP_TASK_STATUS.ASSIGNED]: 'Assigned',
   [PICKUP_TASK_STATUS.ACCEPTED]: 'Accepted',
-  [PICKUP_TASK_STATUS.OTP_SENT]: 'OTP Sent',
+  [PICKUP_TASK_STATUS.PICKED_UP]: 'Picked Up',
   [PICKUP_TASK_STATUS.COMPLETED]: 'Completed',
   [PICKUP_TASK_STATUS.DECLINED]: 'Declined',
 

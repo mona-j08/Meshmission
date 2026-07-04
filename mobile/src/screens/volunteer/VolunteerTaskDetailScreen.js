@@ -4,8 +4,9 @@
 //     see the donor's preferred pickup window (was missing entirely).
 //  2. Show the full `donorLocation.address` (or `.area`) on the detail screen
 //     rather than only the abbreviated area shown on the card.
-//  3. Show donor contact info (phone / email from the task's `/private` sub-doc)
-//     once the volunteer has accepted the task, to enable coordination.
+//  3. Show donor contact info (phone / email) once the volunteer has accepted
+//     the task. Falls back from private sub-doc → donor's user profile so
+//     the phone number is always available for coordination.
 //  4. Handle both `donationIds` (array — new) and `donationId` (string — legacy)
 //     when rendering the associated donation list.
 //  5. Use `formatScheduledDate` from locationHelper for the date row.
@@ -55,9 +56,9 @@ export default function VolunteerTaskDetailScreen({ route, navigation }) {
       const data = { id: snap.id, ...snap.data() };
       setTask(data);
 
-      // Load private sub-doc if this volunteer already owns the task
+      // Load donor contact info if this volunteer already owns the task
       if (data.volunteerId === currentUid) {
-        await loadPrivateInfo(taskId);
+        await loadDonorContactInfo(taskId, data.donorId);
       }
     } catch (err) {
       setError(err.message);
@@ -66,14 +67,36 @@ export default function VolunteerTaskDetailScreen({ route, navigation }) {
     }
   }, [taskId, currentUid]);
 
-  // ── Load /private sub-doc (PII: donor phone, email) ──────────────────────
-  // Firestore rules allow read only when volunteerId === currentUid.
-  const loadPrivateInfo = async (tid) => {
+  // ── Load donor contact info ──────────────────────────────────────────────
+  // Strategy: Try private sub-doc first (forward-compat), then fall back to
+  // fetching phone/email directly from the donor's user profile document.
+  const loadDonorContactInfo = async (tid, donorId) => {
     try {
+      // 1. Try the private sub-doc (may not exist yet)
       const pvtSnap = await getDoc(doc(db, "pickup_tasks", tid, "private", "donorContact"));
-      if (pvtSnap.exists()) setPrivateInfo(pvtSnap.data());
+      if (pvtSnap.exists()) {
+        setPrivateInfo(pvtSnap.data());
+        return;
+      }
     } catch {
-      // Non-fatal — user may not have accepted yet, or sub-doc absent
+      // Non-fatal — sub-doc may not exist
+    }
+
+    // 2. Fall back: fetch from the donor's user profile
+    if (donorId) {
+      try {
+        const userSnap = await getDoc(doc(db, "users", donorId));
+        if (userSnap.exists()) {
+          const userData = userSnap.data();
+          const phone = userData.phoneNumber || userData.phone || null;
+          const email = userData.email || null;
+          if (phone || email) {
+            setPrivateInfo({ phone, email });
+          }
+        }
+      } catch {
+        // Non-fatal — user doc may be inaccessible
+      }
     }
   };
 
@@ -238,20 +261,29 @@ export default function VolunteerTaskDetailScreen({ route, navigation }) {
 
       {/* ── Donor contact info (visible only after accepting) ─────────────── */}
       {isMyTask && privateInfo && (
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>Donor Contact</Text>
-          <Text style={styles.contactNote}>
-            Contact the donor to coordinate the pickup.
+        <View style={[styles.card, styles.contactCard]}>
+          <Text style={styles.cardTitle}>📞 Donor Contact</Text>
+          <Text style={styles.contactHelpText}>
+            Use the donor's contact details to coordinate pickup — confirm the 
+            exact address, agree on a time slot, or check item availability.
           </Text>
 
           {privateInfo.phone ? (
-            <TouchableOpacity
-              style={styles.contactRow}
-              onPress={() => Linking.openURL(`tel:${privateInfo.phone}`)}
-            >
-              <Text style={styles.contactLabel}>📞 Phone</Text>
-              <Text style={styles.contactValue}>{privateInfo.phone}</Text>
-            </TouchableOpacity>
+            <View style={styles.phoneSection}>
+              <View style={styles.phoneRow}>
+                <Text style={styles.phoneIcon}>📱</Text>
+                <View style={styles.phoneInfo}>
+                  <Text style={styles.phoneLabel}>Phone Number</Text>
+                  <Text style={styles.phoneNumber}>{privateInfo.phone}</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.callBtn}
+                onPress={() => Linking.openURL(`tel:${privateInfo.phone}`)}
+              >
+                <Text style={styles.callBtnText}>📞 Call Donor</Text>
+              </TouchableOpacity>
+            </View>
           ) : null}
 
           {privateInfo.email ? (
@@ -284,14 +316,49 @@ export default function VolunteerTaskDetailScreen({ route, navigation }) {
         </TouchableOpacity>
       )}
 
-      {/* ── Already accepted message ────────────────────────────────────────── */}
-      {isAccepted && isMyTask && (
+      {/* ── Already accepted — show Confirm Pickup button ──────────────────── */}
+      {isAccepted && isMyTask && task.status !== 'picked_up' && task.status !== 'completed' && (
+        <>
+          <View style={styles.acceptedBanner}>
+            <Text style={styles.acceptedBannerText}>
+              ✅ You have accepted this task.
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.confirmPickupBtn}
+            onPress={() => navigation.navigate('VolunteerPickupConfirm', { taskId, task })}
+          >
+            <Text style={styles.confirmPickupBtnText}>📸 Confirm Pickup</Text>
+          </TouchableOpacity>
+        </>
+      )}
+
+      {/* ── Pickup already confirmed — show Proceed to Delivery ─────────── */}
+      {isAccepted && isMyTask && task.status === 'picked_up' && (
+        <>
+          <View style={styles.acceptedBanner}>
+            <Text style={styles.acceptedBannerText}>
+              ✅ Pickup confirmed!
+            </Text>
+          </View>
+          <TouchableOpacity
+            style={styles.deliveryBtn}
+            onPress={() => navigation.navigate('VolunteerDelivery', { taskId })}
+          >
+            <Text style={styles.deliveryBtnText}>🚚 Proceed to Delivery</Text>
+          </TouchableOpacity>
+        </>
+      )}
+
+      {/* ── Task completed ────────────────────────────────────────────────── */}
+      {isAccepted && isMyTask && task.status === 'completed' && (
         <View style={styles.acceptedBanner}>
           <Text style={styles.acceptedBannerText}>
-            ✅ You have accepted this task.
+            🎉 This task has been completed.
           </Text>
         </View>
       )}
+
 
     </ScrollView>
   );
@@ -383,12 +450,63 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
 
-  // ── Contact rows ──────────────────────────────────────────────────────────
+  // ── Contact card & rows ────────────────────────────────────────────────────
+  contactCard: {
+    borderLeftWidth:  4,
+    borderLeftColor: "#10B981",
+  },
+  contactHelpText: {
+    color:        "#4B5563",
+    fontSize:     13,
+    lineHeight:   19,
+    marginBottom:  14,
+  },
   contactNote: {
     color:        "#6B7280",
     fontSize:     13,
     marginBottom:  8,
     fontStyle:    "italic",
+  },
+  phoneSection: {
+    backgroundColor: "#F0FDF4",
+    borderRadius:    10,
+    padding:         14,
+    marginBottom:     8,
+  },
+  phoneRow: {
+    flexDirection:  "row",
+    alignItems:     "center",
+    marginBottom:    12,
+  },
+  phoneIcon: {
+    fontSize:    28,
+    marginRight: 12,
+  },
+  phoneInfo: {
+    flex: 1,
+  },
+  phoneLabel: {
+    color:      "#6B7280",
+    fontSize:   12,
+    fontWeight: "500",
+    marginBottom: 2,
+  },
+  phoneNumber: {
+    color:      "#111827",
+    fontSize:   18,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+  },
+  callBtn: {
+    backgroundColor: "#10B981",
+    borderRadius:    10,
+    paddingVertical:  12,
+    alignItems:      "center",
+  },
+  callBtnText: {
+    color:      "#FFFFFF",
+    fontWeight: "700",
+    fontSize:   15,
   },
   contactRow: {
     flexDirection:  "row",
@@ -514,5 +632,33 @@ const styles = StyleSheet.create({
     color:      "#FFFFFF",
     fontWeight: "600",
     fontSize:   13,
+  },
+
+  // ── Confirm Pickup button ──────────────────────────────────────────────
+  confirmPickupBtn: {
+    backgroundColor: "#F59E0B",
+    borderRadius:    12,
+    paddingVertical:  14,
+    alignItems:      "center",
+    marginTop:        12,
+  },
+  confirmPickupBtnText: {
+    color:      "#FFFFFF",
+    fontWeight: "700",
+    fontSize:   16,
+  },
+
+  // ── Proceed to Delivery button ─────────────────────────────────────────
+  deliveryBtn: {
+    backgroundColor: "#10B981",
+    borderRadius:    12,
+    paddingVertical:  14,
+    alignItems:      "center",
+    marginTop:        12,
+  },
+  deliveryBtnText: {
+    color:      "#FFFFFF",
+    fontWeight: "700",
+    fontSize:   16,
   },
 });

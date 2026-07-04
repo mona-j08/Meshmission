@@ -24,7 +24,7 @@ let VolunteerHomeScreen = Placeholder;
 let VolunteerTasksScreen = Placeholder;
 let VolunteerProfileScreen = Placeholder;
 let TaskDetailScreen = Placeholder;
-let OTPScreen = Placeholder;
+let PickupConfirmScreen = Placeholder;
 let DeliveryScreen = Placeholder;
 let CollectionPointsMapScreen = Placeholder;
 let NotificationsScreen = Placeholder;
@@ -32,7 +32,7 @@ try { VolunteerHomeScreen = require('../screens/volunteer/VolunteerHomeScreen').
 try { VolunteerTasksScreen = require('../screens/volunteer/VolunteerTasksScreen').default || Placeholder; } catch {}
 try { VolunteerProfileScreen = require('../screens/volunteer/VolunteerProfileScreen').default || Placeholder; } catch {}
 try { TaskDetailScreen = require('../screens/volunteer/VolunteerTaskDetailScreen').default || Placeholder; } catch {}
-try { OTPScreen = require('../screens/volunteer/VolunteerOTPScreen').default || Placeholder; } catch {}
+try { PickupConfirmScreen = require('../screens/volunteer/VolunteerPickupConfirmScreen').default || Placeholder; } catch {}
 try { DeliveryScreen = require('../screens/volunteer/VolunteerDeliveryScreen').default || Placeholder; } catch {}
 try { CollectionPointsMapScreen = require('../screens/volunteer/CollectionPointsMapScreen').default || Placeholder; } catch {}
 try { NotificationsScreen = require('../screens/shared/NotificationsScreen').default || Placeholder; } catch {}
@@ -107,9 +107,9 @@ const VolunteerStack = () => (
       options={{ title: 'Task Details' }}
     />
     <Stack.Screen
-      name="VolunteerOTP"
-      component={OTPScreen}
-      options={{ title: 'Verify Pickup' }}
+      name="VolunteerPickupConfirm"
+      component={PickupConfirmScreen}
+      options={{ title: 'Confirm Pickup' }}
     />
     <Stack.Screen
       name="VolunteerDelivery"

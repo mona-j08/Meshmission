@@ -5,10 +5,6 @@ import {
   updatePickupTask,
   getVolunteerTasksPaginated,
 } from '../firebase/firestore';
-import {
-  generatePickupOTP as generateOTPFn,
-  verifyPickupOTP as verifyOTPFn,
-} from '../firebase/functions';
 import { PICKUP_TASK_STATUS } from '../constants/status';
 
 /**
@@ -206,36 +202,7 @@ export const useTasks = (volunteerId) => {
     }
   }, [tasks]);
 
-  // ── OTP Functions ────────────────────────────────────────────
-  const generateOTP = useCallback(async (taskId) => {
-    try {
-      setError(null);
-      const { data, error: otpError } = await generateOTPFn(taskId);
-      if (otpError) {
-        setError(otpError);
-        return null;
-      }
-      return data;
-    } catch (err) {
-      setError(err.message);
-      return null;
-    }
-  }, []);
 
-  const verifyOTP = useCallback(async (taskId, otp) => {
-    try {
-      setError(null);
-      const { data, error: verifyError } = await verifyOTPFn(taskId, otp);
-      if (verifyError) {
-        setError(verifyError);
-        return false;
-      }
-      return true;
-    } catch (err) {
-      setError(err.message);
-      return false;
-    }
-  }, []);
 
   const acceptMultipleTasks = useCallback(async (taskIds) => {
     const prevTasks = [...tasks];
@@ -289,8 +256,6 @@ export const useTasks = (volunteerId) => {
     error,
     acceptTask,
     declineTask,
-    generateOTP,
-    verifyOTP,
     fetchMore,
     hasMore,
     acceptMultipleTasks,

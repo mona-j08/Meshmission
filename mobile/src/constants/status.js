@@ -9,7 +9,7 @@ export const DONATION_STATUS = {
   APPROVED: 'approved',
   REJECTED: 'rejected',
   ASSIGNED: 'assigned',
-  OTP_VERIFIED: 'otp_verified',
+  PICKED_UP: 'picked_up',
   IN_TRANSIT: 'in_transit',
   DELIVERED: 'delivered',
 };
@@ -19,7 +19,7 @@ export const DONATION_STATUS_FLOW = [
   DONATION_STATUS.PENDING,
   DONATION_STATUS.APPROVED,
   DONATION_STATUS.ASSIGNED,
-  DONATION_STATUS.OTP_VERIFIED,
+  DONATION_STATUS.PICKED_UP,
   DONATION_STATUS.IN_TRANSIT,
   DONATION_STATUS.DELIVERED,
 ];
@@ -55,7 +55,7 @@ export const PICKUP_TASK_STATUS = {
   OPEN: 'open',
   ASSIGNED: 'assigned',
   ACCEPTED: 'accepted',
-  OTP_SENT: 'otp_sent',
+  PICKED_UP: 'picked_up',
   COMPLETED: 'completed',
   DECLINED: 'declined',
 };
@@ -70,6 +70,6 @@ export const NOTIFICATION_TYPES = {
   APPROVAL: 'approval',
   REJECTION: 'rejection',
   ASSIGNMENT: 'assignment',
-  OTP: 'otp',
+  PICKUP_CONFIRMED: 'pickup_confirmed',
   DELIVERY: 'delivery',
 };

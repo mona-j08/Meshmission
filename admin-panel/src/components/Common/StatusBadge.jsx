@@ -21,8 +21,8 @@ export default function StatusBadge({ status }) {
         return { text: statusVal, className: 'badge-info' };
       case 'accepted':
       case 'in_transit':
-      case 'otp_sent':
-        return { text: statusVal.replace('_', ' '), className: 'badge-warning' };
+      case 'picked_up':
+        return { text: 'Picked Up', className: 'badge-info' };
       case 'needs_review':
         return { text: 'Needs Review', className: 'badge-review' };
       default:

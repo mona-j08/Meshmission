@@ -105,7 +105,7 @@ const VolunteerDeliveryScreen = ({ route, navigation }) => {
         taskId,
         volunteerId: user?.uid,
         donationIds: task?.donationIds || [],
-        ngoId: task?.ngoId || null,
+        ngoId: task?.ngoId || task?.matchedNgoId || null,
         collectionPointId: collectionPoint?.id || null,
         deliveredTo: collectionPoint ? 'collection_point' : 'ngo',
         deliveryLocation: deliverTo?.location || null,
