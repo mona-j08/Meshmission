@@ -214,7 +214,7 @@ export const firestoreService = {
       otpAttempts:          0,
       otpGenerationCount:   0,
       lastOtpGeneratedAt:   null,
-      scheduledDate:        null,
+      scheduledDate:        taskData.scheduledDate || null,
       completedAt:          null,
       createdAt:            new Date().toISOString(),
       updatedAt:            new Date().toISOString(),

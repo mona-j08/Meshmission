@@ -124,14 +124,16 @@ const VolunteerTasksScreen = ({ navigation }) => {
     }
   };
 
-  const formatScheduledDate = (date) => {
-    if (!date) return 'Not scheduled';
-    const d = date?.toDate ? date.toDate() : new Date(date);
-    return d.toLocaleDateString('en-IN', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-    });
+  // Resolves the best date label for a task: scheduled date > preferred > TBD
+  const resolveDateLabel = (task) => {
+    if (task.scheduledDate) {
+      const d = task.scheduledDate?.toDate ? task.scheduledDate.toDate() : new Date(task.scheduledDate);
+      return d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' });
+    }
+    if (task.preferredPickupDate) {
+      return `Preferred: ${task.preferredPickupDate}`;
+    }
+    return 'Pickup date TBD';
   };
 
   const renderTaskItem = useCallback(
@@ -153,7 +155,7 @@ const VolunteerTasksScreen = ({ navigation }) => {
           categoryLabel={CATEGORY_LABELS[item.category] || item.category}
           categoryIcon={CATEGORY_ICONS[item.category] || '📦'}
           generalArea={getGeneralArea(item.donorLocation)}
-          scheduledDate={formatScheduledDate(item.scheduledDate)}
+          scheduledDate={resolveDateLabel(item)}
           statusBadge={<StatusBadge status={item.status} />}
         />
         { (item.status === PICKUP_TASK_STATUS.ASSIGNED || item.status === PICKUP_TASK_STATUS.OPEN) && !isMultiSelectMode && (

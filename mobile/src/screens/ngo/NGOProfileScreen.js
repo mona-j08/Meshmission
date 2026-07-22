@@ -95,7 +95,10 @@ const NGOProfileScreen = () => {
       const success = await saveProfile({
         ngoName: ngoName.trim(),
         registrationNumber: registrationNumber.trim(),
-        contactPerson: contactPerson.trim(),
+        // contactPerson is required by createNGOProfileDoc schema
+        contactPerson: contactPerson.trim() || user?.displayName || ngoName.trim(),
+        // email is required by createNGOProfileDoc schema — use auth user email
+        email: user?.email || profile?.email || '',
         phone: phone.trim(),
         description: description.trim(),
         availability,

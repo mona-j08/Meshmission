@@ -65,6 +65,9 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
   const [loading, setLoading]                 = useState(false);
   const [error, setError]                     = useState(null);
 
+  // Admin-set expected drop/delivery date
+  const [scheduledDropDate, setScheduledDropDate] = useState('');
+
   // Fetched donor profile (fallback when donation doesn't have denormalized fields)
   const [donorProfile, setDonorProfile] = useState(null);
   const [loadingDonor, setLoadingDonor] = useState(false);
@@ -177,6 +180,8 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
         collectionPointName:     selectedCp?.name    || null,
         collectionPointAddress:  selectedCp?.address || null,
         dropOffLocation,
+        // Admin-set expected drop date (shown to volunteer as "Drop Date")
+        scheduledDate: scheduledDropDate || null,
       });
 
       // Mark donation as approved
@@ -501,6 +506,26 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
                       </div>
                     )}
                   </>
+                )}
+              </div>
+
+              {/* Expected Drop Date */}
+              <div style={{ marginBottom: '16px' }}>
+                <label style={{ display: 'block', fontWeight: '600', color: '#166534', marginBottom: '6px', fontSize: '0.9rem' }}>
+                  Expected Drop Date <span style={{ color: '#6b7280', fontWeight: '400' }}>(optional)</span>
+                </label>
+                <input
+                  type="date"
+                  className="form-input-control"
+                  value={scheduledDropDate}
+                  onChange={(e) => setScheduledDropDate(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  style={{ width: '100%', boxSizing: 'border-box' }}
+                />
+                {donation.preferredPickupDate && (
+                  <p style={{ margin: '6px 0 0', color: '#6b7280', fontSize: '0.8rem' }}>
+                    💡 Donor preferred: {donation.preferredPickupDate}
+                  </p>
                 )}
               </div>
 

@@ -224,7 +224,12 @@ export default function VolunteerTaskDetailScreen({ route, navigation }) {
         {units != null    ? <DetailRow label="Units"       value={String(units)} /> : null}
         {pickupDate       ? <DetailRow label="Pickup Date"  value={pickupDate} /> : null}
         {pickupTime       ? <DetailRow label="Pickup Time"  value={pickupTime} /> : null}
-        <DetailRow label="Scheduled Date" value={formatScheduledDate(task.scheduledDate)} />
+        {/* Show scheduled date if admin set it, else show donor's preferred date */}
+        {task.scheduledDate ? (
+          <DetailRow label="Drop Date" value={formatScheduledDate(task.scheduledDate)} />
+        ) : pickupDate ? (
+          <DetailRow label="Preferred Pickup Date" value={pickupDate} />
+        ) : null}
         <DetailRow label="Status" value={(task.status || "open").toUpperCase()} />
       </View>
 

@@ -42,11 +42,14 @@ export default function TaskCard({ task, onPress, areaLabel }) {
   // getDonorInitials() gracefully returns "??" when the name is missing.
   const initials = getDonorInitials(task.donorName);
 
-  // ── FIX 3: Scheduled date ─────────────────────────────────────────────────
-  // `task.scheduledDate` is now written (as null) by createOpenPickupTask().
-  // formatScheduledDate() returns "Not scheduled" for null — which is better
-  // than "No date set" and is factually accurate.
-  const dateLabel = formatScheduledDate(task.scheduledDate);
+  // ── FIX 3: Scheduled date with preferredPickupDate fallback ─────────────────
+  // If scheduledDate is null (not yet assigned), show the donor's preferred
+  // pickup date instead. Falls back to 'Pickup date TBD' if neither is set.
+  const dateLabel = task.scheduledDate
+    ? formatScheduledDate(task.scheduledDate)
+    : task.preferredPickupDate
+    ? `📅 Preferred: ${task.preferredPickupDate}`
+    : 'Pickup date TBD';
 
   // ── Drop-off location ──────────────────────────────────────────────────────
   const dropOffName = task.dropOffLocation?.name || task.collectionPointName || task.ngoName || null;
@@ -90,6 +93,13 @@ export default function TaskCard({ task, onPress, areaLabel }) {
         {dropOffName ? (
           <Text style={styles.dropoff} numberOfLines={1}>
             🏢 → {dropOffName}
+          </Text>
+        ) : null}
+
+        {/* Units */}
+        {task.units != null ? (
+          <Text style={styles.category} numberOfLines={1}>
+            📦 Units: {task.units}
           </Text>
         ) : null}
 
