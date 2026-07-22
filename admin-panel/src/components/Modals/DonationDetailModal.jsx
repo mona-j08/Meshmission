@@ -1,14 +1,18 @@
 // ─── DonationDetailModal.jsx ────────────────────────────────────────────────
 // Full donation verification modal with NGO + Collection Point assignment.
 //
-// When admin approves a donation, they:
-//   1. Select an NGO to match the donation to
-//   2. Select a Collection Point as the drop-off destination
-//   3. The system creates a pickup_task with full donor info + drop-off info
-//      so the volunteer sees both pickup and delivery locations clearly.
+// UPDATED:
+//  • Shows complete DONOR INFO section (name, phone, full address).
+//  • Shows complete DONATION INFO (category, description, units, pickup date,
+//    pickup time, photos, notes, status).
+//  • Shows VOLUNTEER INFO when assigned.
+//  • Shows RECEIVER / NGO INFO (name, address, phone).
+//  • Passes donorPhone, donorAddress, units, preferredPickupDate, pickupTime,
+//    receiverName, receiverPhone, receiverAddress into the pickup task on approve.
+//  • Fetches donor user profile to display name/phone when not denormalized yet.
 // ────────────────────────────────────────────────────────────────────────────
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../../firebase/config';
 import { useCollection, firestoreService } from '../../hooks/useFirestore';
@@ -16,9 +20,6 @@ import StatusBadge from '../Common/StatusBadge';
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Build a safe donorLocation object the volunteer UI can always consume.
- */
 function buildDonorLocation(donation) {
   const loc = donation.location;
   if (loc && (loc.latitude != null || loc.lat != null)) return loc;
@@ -26,7 +27,30 @@ function buildDonorLocation(donation) {
   if (donation.pickupAddress && typeof donation.pickupAddress === 'string') {
     return { area: donation.pickupAddress };
   }
+  if (donation.donorAddress && typeof donation.donorAddress === 'object') {
+    const a = donation.donorAddress;
+    const addressStr = [a.street, a.area, a.city, a.state, a.pincode].filter(Boolean).join(', ');
+    return { area: addressStr || null };
+  }
   return null;
+}
+
+function formatAddressObj(addr) {
+  if (!addr) return null;
+  if (typeof addr === 'string') return addr;
+  return [addr.street, addr.area, addr.city, addr.state, addr.pincode]
+    .filter(Boolean)
+    .join(', ') || null;
+}
+
+function InfoRow({ label, value, highlight = false }) {
+  if (!value) return null;
+  return (
+    <p className="info-value" style={{ margin: '4px 0' }}>
+      <strong>{label}:</strong>{' '}
+      <span style={highlight ? { color: '#1d4ed8', fontWeight: '600' } : {}}>{value}</span>
+    </p>
+  );
 }
 
 // ── component ────────────────────────────────────────────────────────────────
@@ -34,22 +58,57 @@ function buildDonorLocation(donation) {
 export default function DonationDetailModal({ isOpen, donation, onClose, onActionSuccess }) {
   // Form state
   const [rejectionReason, setRejectionReason] = useState('');
-  const [showRejectForm, setShowRejectForm] = useState(false);
+  const [showRejectForm, setShowRejectForm]   = useState(false);
   const [showApproveForm, setShowApproveForm] = useState(false);
-  const [selectedNgoId, setSelectedNgoId] = useState('');
-  const [selectedCpId, setSelectedCpId] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [selectedNgoId, setSelectedNgoId]     = useState('');
+  const [selectedCpId, setSelectedCpId]       = useState('');
+  const [loading, setLoading]                 = useState(false);
+  const [error, setError]                     = useState(null);
+
+  // Fetched donor profile (fallback when donation doesn't have denormalized fields)
+  const [donorProfile, setDonorProfile] = useState(null);
+  const [loadingDonor, setLoadingDonor] = useState(false);
 
   // Fetch NGO profiles and collection points for dropdowns
-  const { data: ngoProfiles, loading: ngosLoading } = useCollection('ngo_profiles', 'createdAt', 'desc');
-  const { data: collectionPoints, loading: cpsLoading } = useCollection('collection_points', 'name', 'asc');
+  const { data: ngoProfiles, loading: ngosLoading }         = useCollection('ngo_profiles', 'createdAt', 'desc');
+  const { data: collectionPoints, loading: cpsLoading }     = useCollection('collection_points', 'name', 'asc');
+
+  // Fetch donor profile once when donation is known
+  useEffect(() => {
+    if (!donation?.donorId) return;
+
+    // If denormalized name already present, skip fetch
+    if (donation.donorName && donation.donorPhone) return;
+
+    setLoadingDonor(true);
+    getDoc(doc(db, 'users', donation.donorId))
+      .then((snap) => {
+        if (snap.exists()) {
+          const d = snap.data();
+          setDonorProfile({
+            name:  d.name || d.displayName || null,
+            phone: d.donorPhone || d.phoneNumber || d.phone || null,
+            email: d.email || null,
+            donorAddress: d.donorAddress || null,
+            donorId: d.donorId || null,
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingDonor(false));
+  }, [donation?.donorId, donation?.donorName, donation?.donorPhone]);
 
   if (!isOpen || !donation) return null;
 
+  // ── Resolved donor info (denormalized wins; fallback to fetched profile) ──
+  const resolvedDonorName    = donation.donorName    || donorProfile?.name    || null;
+  const resolvedDonorPhone   = donation.donorPhone   || donorProfile?.phone   || null;
+  const resolvedDonorAddress = donation.donorAddress || donorProfile?.donorAddress || null;
+  const resolvedDonorEmail   = donorProfile?.email   || null;
+
   // Derived data
   const selectedNgo = ngoProfiles.find(n => n.id === selectedNgoId);
-  const selectedCp = collectionPoints.find(cp => cp.id === selectedCpId);
+  const selectedCp  = collectionPoints.find(cp => cp.id === selectedCpId);
   const activeCollectionPoints = collectionPoints.filter(cp => cp.isActive !== false);
 
   // ── Approve handler ─────────────────────────────────────────────────────
@@ -63,21 +122,6 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
     setError(null);
 
     try {
-      // Fetch donor's display name
-      let donorName = 'Unknown Donor';
-      try {
-        const userSnap = await getDoc(doc(db, 'users', donation.donorId));
-        if (userSnap.exists()) {
-          const userData = userSnap.data();
-          donorName =
-            userData.displayName ||
-            userData.name ||
-            (userData.email ? userData.email.split('@')[0] : 'Unknown Donor');
-        }
-      } catch (nameErr) {
-        console.warn('Could not fetch donor name:', nameErr);
-      }
-
       // Build robust donor location
       const donorLocation = buildDonorLocation(donation);
       const pickupPreference = donation.pickupPreference || donation.pickupTime || null;
@@ -86,42 +130,58 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
       let dropOffLocation = null;
       if (selectedCp) {
         dropOffLocation = {
-          name: selectedCp.name,
+          name:    selectedCp.name,
           address: selectedCp.address || 'Address not available',
-          type: 'collection_point',
-          id: selectedCp.id,
+          type:    'collection_point',
+          id:      selectedCp.id,
         };
       } else if (selectedNgo) {
         dropOffLocation = {
-          name: selectedNgo.ngoName || selectedNgo.name || 'NGO',
+          name:    selectedNgo.ngoName || selectedNgo.name || 'NGO',
           address: selectedNgo.address || 'Address not available',
-          type: 'ngo',
-          id: selectedNgo.id,
+          type:    'ngo',
+          id:      selectedNgo.id,
         };
       }
 
-      // Create the pickup task with full data
+      // Receiver info resolved from NGO or collection point
+      const receiverName    = selectedCp?.name || selectedNgo?.ngoName || selectedNgo?.name || null;
+      const receiverPhone   = selectedCp?.contactPhone || selectedNgo?.phone || selectedNgo?.phoneNumber || null;
+      const receiverAddress = selectedCp?.address || selectedNgo?.address || null;
+
+      // Create the pickup task with FULL data
       await firestoreService.createOpenPickupTask({
-        donationId: donation.id,
-        donorId: donation.donorId,
-        donorName,
+        donationId:  donation.id,
+        donorId:     donation.donorId,
+        // Donor details (denormalized)
+        donorName:   resolvedDonorName,
+        donorPhone:  resolvedDonorPhone,
+        donorAddress: resolvedDonorAddress,
         donorLocation,
         pickupPreference,
-        matchedNgoId: selectedNgoId,
-        ngoName: selectedNgo?.ngoName || selectedNgo?.name || '',
-        ngoAddress: selectedNgo?.address || '',
-        collectionPointId: selectedCp?.id || null,
-        collectionPointName: selectedCp?.name || null,
-        collectionPointAddress: selectedCp?.address || null,
-        dropOffLocation,
-        category: donation.category,
+        preferredPickupDate: donation.preferredPickupDate || null,
+        pickupTime:          donation.pickupTime          || donation.pickupPreference || null,
+        // Donation summary
+        category:    donation.category,
         description: donation.description || '',
-        imageUrls: donation.imageUrls || donation.images || [],
+        units:       donation.units ?? donation.quantity ?? null,
+        imageUrls:   donation.imageUrls || donation.images || [],
+        // Receiver / NGO / collection point
+        matchedNgoId:            selectedNgoId,
+        ngoName:                 selectedNgo?.ngoName || selectedNgo?.name || '',
+        ngoAddress:              selectedNgo?.address || '',
+        receiverName,
+        receiverPhone,
+        receiverAddress,
+        collectionPointId:       selectedCp?.id      || null,
+        collectionPointName:     selectedCp?.name    || null,
+        collectionPointAddress:  selectedCp?.address || null,
+        dropOffLocation,
       });
 
       // Mark donation as approved
       await firestoreService.updateDonationVerification(donation.id, 'approved', {
-        matchedNgoId: selectedNgoId,
+        matchedNgoId:     selectedNgoId,
         collectionPointId: selectedCp?.id || null,
       });
 
@@ -186,32 +246,87 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
 
           <div className="donation-grid-layout">
             <div className="donation-main-info">
-              {/* Description */}
-              <div className="info-block">
-                <span className="info-label">Item Description</span>
-                <p className="info-value-desc">{donation.description || 'No description provided'}</p>
+
+              {/* ── SECTION 1: DONOR INFORMATION ── */}
+              <div className="info-block divider-top" style={{ background: '#f0f9ff', borderRadius: 8, padding: '12px 14px', marginBottom: 16 }}>
+                <span className="info-label" style={{ fontWeight: '700', color: '#0369a1', fontSize: '0.95rem' }}>
+                  👤 Donor Information
+                </span>
+                {loadingDonor && <p style={{ color: '#64748b', fontSize: '0.85rem' }}>Loading donor profile...</p>}
+                <InfoRow label="Donor ID"      value={donation.donorId?.slice(0, 12) + '...'} />
+                <InfoRow label="Name"          value={resolvedDonorName} highlight />
+                <InfoRow label="Phone"         value={resolvedDonorPhone} highlight />
+                <InfoRow label="Email"         value={resolvedDonorEmail} />
+                {resolvedDonorAddress && (
+                  <p className="info-value" style={{ margin: '4px 0' }}>
+                    <strong>Address:</strong>{' '}
+                    <span style={{ color: '#1d4ed8' }}>
+                      {formatAddressObj(resolvedDonorAddress)}
+                    </span>
+                  </p>
+                )}
+                {!resolvedDonorName && !resolvedDonorPhone && !loadingDonor && (
+                  <p style={{ color: '#94a3b8', fontSize: '0.85rem', fontStyle: 'italic' }}>
+                    Donor has not completed registration yet.
+                  </p>
+                )}
               </div>
 
-              {/* Category, Condition, Quantity */}
-              <div className="info-row">
-                <div className="info-block">
-                  <span className="info-label">Category</span>
-                  <span className="info-value category-pill">{donation.category}</span>
+              {/* ── SECTION 2: DONATION INFORMATION ── */}
+              <div className="info-block" style={{ marginBottom: 16 }}>
+                <span className="info-label" style={{ fontWeight: '700', color: '#15803d', fontSize: '0.95rem' }}>
+                  📦 Donation Information
+                </span>
+
+                <div className="info-block" style={{ marginTop: 8 }}>
+                  <span className="info-label">Item Description</span>
+                  <p className="info-value-desc">{donation.description || 'No description provided'}</p>
                 </div>
-                <div className="info-block">
-                  <span className="info-label">Condition</span>
-                  <span className="info-value condition-pill">{donation.condition}</span>
+
+                <div className="info-row">
+                  <div className="info-block">
+                    <span className="info-label">Category</span>
+                    <span className="info-value category-pill">{donation.category}</span>
+                  </div>
+                  <div className="info-block">
+                    <span className="info-label">Condition</span>
+                    <span className="info-value condition-pill">{donation.condition}</span>
+                  </div>
+                  <div className="info-block">
+                    <span className="info-label">Units</span>
+                    <span className="info-value highlight" style={{ color: '#1d4ed8', fontWeight: '700', fontSize: '1.1rem' }}>
+                      {donation.units ?? donation.quantity ?? '—'}
+                    </span>
+                  </div>
                 </div>
-                <div className="info-block">
-                  <span className="info-label">Quantity</span>
-                  <span className="info-value highlight">{donation.quantity} units</span>
+
+                <div className="info-row">
+                  <div className="info-block">
+                    <span className="info-label">Preferred Pickup Date</span>
+                    <span className="info-value">
+                      {donation.preferredPickupDate || '—'}
+                    </span>
+                  </div>
+                  <div className="info-block">
+                    <span className="info-label">Pickup Time</span>
+                    <span className="info-value">
+                      {donation.pickupTime || donation.pickupPreference || '—'}
+                    </span>
+                  </div>
                 </div>
+
+                {donation.notes && (
+                  <div className="info-block">
+                    <span className="info-label">Notes</span>
+                    <p className="info-value">{donation.notes}</p>
+                  </div>
+                )}
               </div>
 
-              {/* Status and date */}
+              {/* ── SECTION 3: STATUS & DATES ── */}
               <div className="info-row">
                 <div className="info-block">
-                  <span className="info-label">Current Verification Status</span>
+                  <span className="info-label">Current Status</span>
                   <div><StatusBadge status={donation.verificationStatus || donation.status} /></div>
                 </div>
                 <div className="info-block">
@@ -224,13 +339,22 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
                 </div>
               </div>
 
-              {/* Pickup / Donor info */}
+              {/* ── SECTION 4: PICKUP / DONOR ADDRESS ── */}
               <div className="info-block divider-top">
-                <span className="info-label">Pickup / Donor Information</span>
-                <p className="info-value"><strong>Donor ID:</strong> {donation.donorId}</p>
-                <p className="info-value"><strong>Pickup Address:</strong> {donation.pickupAddress || 'Address not specified'}</p>
+                <span className="info-label">📍 Pickup / Donor Address</span>
+                <p className="info-value">
+                  {resolvedDonorAddress
+                    ? formatAddressObj(resolvedDonorAddress)
+                    : donation.pickupAddress || donation.location?.address || 'Address not specified'}
+                </p>
+                {resolvedDonorPhone && (
+                  <p className="info-value"><strong>Contact:</strong> {resolvedDonorPhone}</p>
+                )}
                 {(donation.pickupTime || donation.pickupPreference) && (
                   <p className="info-value"><strong>Preferred Time:</strong> {donation.pickupPreference || donation.pickupTime}</p>
+                )}
+                {donation.preferredPickupDate && (
+                  <p className="info-value"><strong>Preferred Date:</strong> {donation.preferredPickupDate}</p>
                 )}
               </div>
 
@@ -239,6 +363,19 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
                 <div className="info-block rejection-reason-block">
                   <span className="info-label">Previous Rejection Reason</span>
                   <p className="info-value error-color">{donation.rejectionReason}</p>
+                </div>
+              )}
+
+              {/* ── SECTION 5: VOLUNTEER INFO (if assigned) ── */}
+              {donation.matchedNgoId && (
+                <div className="info-block divider-top" style={{ background: '#faf5ff', borderRadius: 8, padding: '10px 12px' }}>
+                  <span className="info-label" style={{ fontWeight: '700', color: '#7c3aed' }}>
+                    🚴 Assignment Info
+                  </span>
+                  <p className="info-value"><strong>Matched NGO ID:</strong> {donation.matchedNgoId}</p>
+                  {donation.collectionPointId && (
+                    <p className="info-value"><strong>Collection Point ID:</strong> {donation.collectionPointId}</p>
+                  )}
                 </div>
               )}
             </div>
@@ -279,10 +416,10 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
                 🏢 Assign NGO & Drop-off Point
               </h4>
               <p style={{ margin: '0 0 14px', color: '#15803d', fontSize: '0.85rem' }}>
-                Select the NGO to match this donation to, and optionally a collection point as the drop-off destination for the volunteer.
+                Select the NGO to match this donation to, and optionally a collection point as the drop-off destination.
               </p>
 
-              {/* ── NGO Dropdown ── */}
+              {/* NGO Dropdown */}
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', fontWeight: '600', color: '#166534', marginBottom: '6px', fontSize: '0.9rem' }}>
                   NGO <span style={{ color: '#dc2626' }}>*</span>
@@ -290,13 +427,7 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
                 {ngosLoading ? (
                   <p style={{ color: '#64748b' }}>Loading NGOs...</p>
                 ) : ngoProfiles.length === 0 ? (
-                  <div style={{
-                    padding: '12px',
-                    background: '#fef9c3',
-                    borderRadius: '8px',
-                    color: '#854d0e',
-                    fontSize: '0.875rem',
-                  }}>
+                  <div style={{ padding: '12px', background: '#fef9c3', borderRadius: '8px', color: '#854d0e', fontSize: '0.875rem' }}>
                     ⚠️ No NGO profiles found. Ask NGOs to complete their profile in the mobile app first.
                   </div>
                 ) : (
@@ -315,27 +446,14 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
                       ))}
                     </select>
 
-                    {/* Selected NGO preview */}
                     {selectedNgo && (
-                      <div style={{
-                        marginTop: '10px',
-                        padding: '12px 14px',
-                        background: '#fff',
-                        borderRadius: '8px',
-                        border: '1px solid #bbf7d0',
-                        fontSize: '0.875rem',
-                        lineHeight: 1.6,
-                      }}>
-                        <strong style={{ color: '#166534' }}>
-                          📍 {selectedNgo.ngoName || selectedNgo.name}
-                        </strong><br />
-                        <span style={{ color: '#374151' }}>
-                          {selectedNgo.address || 'No address on file'}
-                        </span><br />
+                      <div style={{ marginTop: '10px', padding: '12px 14px', background: '#fff', borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '0.875rem', lineHeight: 1.6 }}>
+                        <strong style={{ color: '#166534' }}>📍 {selectedNgo.ngoName || selectedNgo.name}</strong><br />
+                        <span style={{ color: '#374151' }}>{selectedNgo.address || 'No address on file'}</span><br />
+                        {selectedNgo.phone && <span style={{ color: '#6b7280' }}>📞 {selectedNgo.phone}</span>}
                         {selectedNgo.contactPerson && (
                           <span style={{ color: '#6b7280' }}>
-                            Contact: {selectedNgo.contactPerson}
-                            {selectedNgo.phone || selectedNgo.phoneNumber ? ` · ${selectedNgo.phone || selectedNgo.phoneNumber}` : ''}
+                            {selectedNgo.phone ? ' · ' : ''}Contact: {selectedNgo.contactPerson}
                           </span>
                         )}
                       </div>
@@ -344,7 +462,7 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
                 )}
               </div>
 
-              {/* ── Collection Point Dropdown ── */}
+              {/* Collection Point Dropdown */}
               <div style={{ marginBottom: '16px' }}>
                 <label style={{ display: 'block', fontWeight: '600', color: '#166534', marginBottom: '6px', fontSize: '0.9rem' }}>
                   Drop-off Collection Point <span style={{ color: '#6b7280', fontWeight: '400' }}>(optional)</span>
@@ -352,13 +470,7 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
                 {cpsLoading ? (
                   <p style={{ color: '#64748b' }}>Loading collection points...</p>
                 ) : activeCollectionPoints.length === 0 ? (
-                  <div style={{
-                    padding: '12px',
-                    background: '#fef9c3',
-                    borderRadius: '8px',
-                    color: '#854d0e',
-                    fontSize: '0.875rem',
-                  }}>
+                  <div style={{ padding: '12px', background: '#fef9c3', borderRadius: '8px', color: '#854d0e', fontSize: '0.875rem' }}>
                     ⚠️ No active collection points. The NGO address will be used as the drop-off location.
                   </div>
                 ) : (
@@ -377,35 +489,14 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
                       ))}
                     </select>
 
-                    {/* Selected collection point preview */}
                     {selectedCp && (
-                      <div style={{
-                        marginTop: '10px',
-                        padding: '12px 14px',
-                        background: '#fff',
-                        borderRadius: '8px',
-                        border: '1px solid #bbf7d0',
-                        fontSize: '0.875rem',
-                        lineHeight: 1.6,
-                      }}>
-                        <strong style={{ color: '#166534' }}>
-                          📦 {selectedCp.name}
-                        </strong><br />
-                        <span style={{ color: '#374151' }}>
-                          {selectedCp.address || 'No address on file'}
-                        </span><br />
+                      <div style={{ marginTop: '10px', padding: '12px 14px', background: '#fff', borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '0.875rem', lineHeight: 1.6 }}>
+                        <strong style={{ color: '#166534' }}>📦 {selectedCp.name}</strong><br />
+                        <span style={{ color: '#374151' }}>{selectedCp.address || 'No address on file'}</span><br />
                         {selectedCp.acceptedCategories && (
                           <span style={{ color: '#6b7280' }}>
                             Accepts: {(selectedCp.acceptedCategories || selectedCp.acceptedTypes || []).join(', ')}
                           </span>
-                        )}
-                        {selectedCp.currentCapacity != null && selectedCp.maxCapacity && (
-                          <>
-                            <br />
-                            <span style={{ color: '#6b7280' }}>
-                              Capacity: {selectedCp.currentCapacity}/{selectedCp.maxCapacity}
-                            </span>
-                          </>
                         )}
                       </div>
                     )}
@@ -434,7 +525,7 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
             </div>
           )}
 
-          {/* ── Rejection Form ── */}
+          {/* Rejection Form */}
           {showRejectForm && (
             <form onSubmit={handleReject} className="rejection-form-overlay animate-slide">
               <h4>Specify Rejection Reason</h4>
@@ -466,7 +557,7 @@ export default function DonationDetailModal({ isOpen, donation, onClose, onActio
           )}
         </div>
 
-        {/* ── Footer Actions ── */}
+        {/* Footer Actions */}
         <div className="modal-footer">
           <div className="modal-footer-actions-left">
             <button className="btn-secondary" onClick={onClose} disabled={loading}>

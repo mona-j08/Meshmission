@@ -185,3 +185,35 @@ export function getDonorInitials(name) {
   // First letter of first and last word
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
 }
+
+// ── NEW HELPERS ────────────────────────────────────────────────────────────
+
+/**
+ * Format a structured address object into a human-readable string.
+ * @param {Object|string} addressObj - { street, area, city, state, pincode } or plain string
+ * @returns {string}
+ */
+export function formatFullAddress(addressObj) {
+  if (!addressObj) return 'Address not available';
+  if (typeof addressObj === 'string') return addressObj;
+  return [
+    addressObj.street,
+    addressObj.area,
+    addressObj.city,
+    addressObj.state,
+    addressObj.pincode,
+  ]
+    .filter(Boolean)
+    .join(', ') || 'Address not available';
+}
+
+/**
+ * Build a Google Maps search URL from an address string or object.
+ * @param {Object|string} address
+ * @returns {string|null}
+ */
+export function buildGoogleMapsUrl(address) {
+  const formatted = formatFullAddress(address);
+  if (!formatted || formatted === 'Address not available') return null;
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(formatted)}`;
+}

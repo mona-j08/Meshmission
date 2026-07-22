@@ -183,24 +183,41 @@ export const firestoreService = {
       donationIds: taskData.donationIds || (taskData.donationId ? [taskData.donationId] : []),
       status: 'open',
       volunteerId: null,
-      // Drop-off / destination fields
-      ngoName: taskData.ngoName || null,
-      ngoAddress: taskData.ngoAddress || null,
-      collectionPointId: taskData.collectionPointId || null,
-      collectionPointName: taskData.collectionPointName || null,
+      // Donation summary fields
+      category:             taskData.category             || null,
+      description:          taskData.description          || null,
+      units:                taskData.units != null ? Number(taskData.units) : null,
+      // Donor contact details (revealed after volunteer accepts)
+      donorName:            taskData.donorName            || null,
+      donorPhone:           taskData.donorPhone           || null,
+      donorAddress:         taskData.donorAddress         || null,
+      // Pickup scheduling
+      preferredPickupDate:  taskData.preferredPickupDate  || null,
+      pickupTime:           taskData.pickupTime           || null,
+      pickupPreference:     taskData.pickupPreference     || taskData.pickupTime || null,
+      // Drop-off / NGO / Receiver fields
+      ngoName:              taskData.ngoName              || null,
+      ngoAddress:           taskData.ngoAddress           || null,
+      receiverName:         taskData.receiverName         || taskData.ngoName || null,
+      receiverPhone:        taskData.receiverPhone        || null,
+      receiverAddress:      taskData.receiverAddress      || taskData.ngoAddress || null,
+      collectionPointId:    taskData.collectionPointId    || null,
+      collectionPointName:  taskData.collectionPointName  || null,
       collectionPointAddress: taskData.collectionPointAddress || null,
-      dropOffLocation: taskData.dropOffLocation || null,
+      dropOffLocation:      taskData.dropOffLocation      || null,
+      // Image URLs
+      imageUrls:            taskData.imageUrls            || [],
       // OTP fields
-      otp: null,
-      otpExpiresAt: null,
-      otpVerified: false,
-      otpAttempts: 0,
-      otpGenerationCount: 0,
-      lastOtpGeneratedAt: null,
-      scheduledDate: null,
-      completedAt: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      otp:                  null,
+      otpExpiresAt:         null,
+      otpVerified:          false,
+      otpAttempts:          0,
+      otpGenerationCount:   0,
+      lastOtpGeneratedAt:   null,
+      scheduledDate:        null,
+      completedAt:          null,
+      createdAt:            new Date().toISOString(),
+      updatedAt:            new Date().toISOString(),
     });
   }
 };

@@ -63,6 +63,7 @@ const stripPrivacyForUnacceptedTasks = (tasks) => {
 
     if (!isAccepted) {
       const stripped = { ...task };
+      // Mask full GPS location
       if (stripped.donorLocation) {
         if (typeof stripped.donorLocation === 'object') {
           stripped.donorLocation = {
@@ -74,6 +75,17 @@ const stripPrivacyForUnacceptedTasks = (tasks) => {
           stripped.donorLocation = 'Location masked for privacy';
         }
       }
+      // Mask donor phone number until accepted
+      stripped.donorPhone = null;
+      // Mask precise donor address until accepted – keep only city/area
+      if (stripped.donorAddress && typeof stripped.donorAddress === 'object') {
+        stripped.donorAddress = {
+          city: stripped.donorAddress.city || null,
+          state: stripped.donorAddress.state || null,
+        };
+      }
+      // Mask receiver phone number until accepted
+      stripped.receiverPhone = null;
       return stripped;
     }
     return task;
@@ -130,6 +142,86 @@ export const updateFCMToken = async (userId, token) => {
 };
 
 export const updateFcmToken = updateFCMToken;
+
+// ── DONOR REGISTRATION OPERATIONS ────────────────────────────
+
+/**
+ * Save/update donor registration details on the user profile.
+ * Marks donorRegistered: true and stores address + phone + donorId.
+ */
+export const saveDonorRegistration = async (userId, { name, phone, street, area, city, state, pincode, donorId }) => {
+  try {
+    const updates = {
+      name,
+      donorPhone: phone,
+      donorAddress: { street: street || '', area: area || '', city, state, pincode },
+      donorRegistered: true,
+      donorId: donorId || null,
+      updatedAt: serverTimestamp(),
+    };
+    await updateDoc(doc(db, COLLECTIONS.USERS, userId), updates);
+    return { error: null };
+  } catch (error) {
+    throw new Error(`[firestore:saveDonorRegistration] ${error.message}`);
+  }
+};
+
+/**
+ * Returns true if the user has already completed donor registration.
+ */
+export const checkDonorRegistered = async (userId) => {
+  try {
+    const docSnap = await getDoc(doc(db, COLLECTIONS.USERS, userId));
+    if (docSnap.exists()) {
+      return !!docSnap.data().donorRegistered;
+    }
+    return false;
+  } catch (error) {
+    return false;
+  }
+};
+
+/**
+ * Fetch donor info (name, phone, donorAddress, donorId) from users collection.
+ * Returns null if not found.
+ */
+export const getDonorInfo = async (userId) => {
+  try {
+    const docSnap = await getDoc(doc(db, COLLECTIONS.USERS, userId));
+    if (docSnap.exists()) {
+      const d = docSnap.data();
+      return {
+        name: d.name || d.displayName || null,
+        phone: d.donorPhone || d.phoneNumber || d.phone || null,
+        donorAddress: d.donorAddress || null,
+        donorId: d.donorId || null,
+        email: d.email || null,
+      };
+    }
+    return null;
+  } catch (error) {
+    console.warn('[firestore:getDonorInfo]', error.message);
+    return null;
+  }
+};
+
+// ── NOTIFICATION CREATION ─────────────────────────────────────
+
+/**
+ * Create a notification document for a user.
+ * type: 'approval' | 'rejection' | 'assignment' | 'pickup_confirmed' | 'delivery'
+ */
+export const createNotification = async (userId, { title, body, type, data = {} }) => {
+  try {
+    const docData = createNotificationDoc({ userId, title, body, type, data });
+    await addDoc(collection(db, COLLECTIONS.NOTIFICATIONS), docData);
+    return { error: null };
+  } catch (error) {
+    // Non-critical — log and continue
+    console.warn('[firestore:createNotification]', error.message);
+    return { error: error.message };
+  }
+};
 
 export const getAllUsers = async (roleFilter = null) => {
   try {

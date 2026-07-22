@@ -25,8 +25,10 @@ export default function DonationVerification() {
         ? (status === 'pending' || status === 'uploaded')
         : (status === activeTab);
       
-      const matchesSearch = !searchQuery || 
+      const matchesSearch = !searchQuery |
         (donation.description?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (donation.donorName?.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (donation.donorPhone?.includes(searchQuery)) ||
         (donation.id?.toLowerCase().includes(searchQuery.toLowerCase()));
 
       const matchesCategory = !filterCategory || donation.category === filterCategory;
@@ -117,11 +119,13 @@ export default function DonationVerification() {
               <thead>
                 <tr>
                   <th>Preview</th>
+                  <th>Donor</th>
                   <th>Description</th>
                   <th>Category</th>
-                  <th>Quantity</th>
+                  <th>Units</th>
+                  <th>Pickup Date</th>
                   <th>Condition</th>
-                  <th>Submitted Date</th>
+                  <th>Submitted</th>
                   <th>Status</th>
                   <th className="actions-header">Action</th>
                 </tr>
@@ -129,28 +133,73 @@ export default function DonationVerification() {
               <tbody>
                 {filteredItems.map((item) => (
                   <tr key={item.id} className="table-row-hoverable">
+                    {/* Preview */}
                     <td className="thumbnail-cell">
                       {(item.images && item.images.length > 0) || (item.imageUrls && item.imageUrls.length > 0) ? (
-                        <img 
-                          className="table-thumbnail-img" 
-                          src={(item.images && item.images[0]) || (item.imageUrls && item.imageUrls[0])} 
-                          alt="Thumbnail" 
+                        <img
+                          className="table-thumbnail-img"
+                          src={(item.images && item.images[0]) || (item.imageUrls && item.imageUrls[0])}
+                          alt="Thumbnail"
                         />
                       ) : (
                         <div className="table-thumbnail-placeholder">📷</div>
                       )}
                     </td>
+
+                    {/* Donor Name + Phone */}
                     <td className="desc-cell">
-                      <div className="item-main-desc">{item.description || 'No description'}</div>
+                      <div className="item-main-desc" style={{ fontWeight: '600', color: '#1e40af' }}>
+                        {item.donorName || <span style={{ color: '#94a3b8', fontStyle: 'italic' }}>Not registered</span>}
+                      </div>
+                      {item.donorPhone && (
+                        <div className="item-sub-id">📞 {item.donorPhone}</div>
+                      )}
+                    </td>
+
+                    {/* Description */}
+                    <td className="desc-cell">
+                      <div className="item-main-desc">{item.description || item.reason || 'No description'}</div>
                       <div className="item-sub-id">ID: {item.id.slice(0, 8)}...</div>
                     </td>
+
+                    {/* Category */}
                     <td><span className="category-pill-label">{item.category}</span></td>
-                    <td><strong>{item.quantity}</strong> units</td>
+
+                    {/* Units */}
+                    <td style={{ textAlign: 'center' }}>
+                      <strong style={{ fontSize: '1.1rem', color: '#1d4ed8' }}>
+                        {item.units ?? item.quantity ?? '—'}
+                      </strong>
+                    </td>
+
+                    {/* Pickup Date */}
+                    <td>
+                      {item.preferredPickupDate
+                        ? <span style={{ color: '#15803d', fontWeight: '600' }}>{item.preferredPickupDate}</span>
+                        : <span style={{ color: '#94a3b8' }}>—</span>}
+                      {(item.pickupTime || item.pickupPreference) && (
+                        <div style={{ fontSize: '0.75rem', color: '#6b7280', marginTop: 2 }}>
+                          {item.pickupTime || item.pickupPreference}
+                        </div>
+                      )}
+                    </td>
+
+                    {/* Condition */}
                     <td><span className={`condition-tag cond-${item.condition}`}>{item.condition}</span></td>
-                    <td>{item.createdAt ? new Date(item.createdAt.seconds ? item.createdAt.seconds * 1000 : item.createdAt).toLocaleDateString() : 'N/A'}</td>
+
+                    {/* Submitted Date */}
+                    <td>
+                      {item.createdAt
+                        ? new Date(item.createdAt.seconds ? item.createdAt.seconds * 1000 : item.createdAt).toLocaleDateString()
+                        : 'N/A'}
+                    </td>
+
+                    {/* Status */}
                     <td><StatusBadge status={item.verificationStatus || item.status} /></td>
+
+                    {/* Action */}
                     <td className="action-cell">
-                      <button 
+                      <button
                         className="btn-primary btn-sm"
                         onClick={() => handleReviewClick(item)}
                       >

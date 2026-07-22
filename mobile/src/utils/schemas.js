@@ -21,7 +21,9 @@ const requireField = (value, fieldName, factoryName) => {
   return value;
 };
 
-// ── User Document ────────────────────────────────────────────
+// ── User / Donor Document ────────────────────────────────────────────────────
+// Stored in the 'users' collection.
+// donorAddress and donorRegistered fields added for mandatory donor registration.
 
 export const createUserDoc = ({ userId, email, role, name, phoneNumber = null }) => {
   requireField(userId, 'userId', 'createUserDoc');
@@ -38,19 +40,61 @@ export const createUserDoc = ({ userId, email, role, name, phoneNumber = null })
     fcmToken: null,
     fcmTokenUpdatedAt: null,
     profileImageUrl: null,
+    // Donor-specific registration fields
+    donorRegistered: false,
+    donorPhone: null,
+    donorAddress: null,   // { street, area, city, state, pincode }
+    donorId: null,        // e.g. "DON-XXXXXXXX"
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
 };
 
-// ── Donation Document ────────────────────────────────────────
+// ── Donor Profile Update Payload ─────────────────────────────────────────────
+// Used with updateUserProfile() when completing donor registration.
+
+export const createDonorProfileUpdate = ({
+  name,
+  phone,
+  street = null,
+  area = null,
+  city,
+  state,
+  pincode,
+  donorId,
+}) => {
+  requireField(name, 'name', 'createDonorProfileUpdate');
+  requireField(phone, 'phone', 'createDonorProfileUpdate');
+  requireField(city, 'city', 'createDonorProfileUpdate');
+  requireField(state, 'state', 'createDonorProfileUpdate');
+  requireField(pincode, 'pincode', 'createDonorProfileUpdate');
+
+  return {
+    name,
+    donorPhone: phone,
+    donorAddress: { street: street || '', area: area || '', city, state, pincode },
+    donorRegistered: true,
+    donorId: donorId || null,
+    updatedAt: serverTimestamp(),
+  };
+};
+
+// ── Donation Document ────────────────────────────────────────────────────────
+// KEY FIXES:
+//  - `units`  replaces the old `quantity` field so the form value is saved.
+//  - `description` accepts the new field directly (form now sends it).
+//  - `preferredPickupDate` stores the date string the donor chooses.
+//  - `pickupTime` stores the time-of-day preference.
+//  - Denormalized donor fields (name, phone, address) are stored on the
+//    donation doc so Admin and Volunteer never have to do a secondary lookup.
 
 export const createDonationDoc = ({
   donorId,
   category,
   description,
-  reason,
-  quantity = 1,
+  reason,             // legacy alias – still accepted
+  units,              // NEW – number of units donated
+  quantity,           // legacy alias – still accepted
   condition = null,
   location = null,
   images = [],
@@ -58,29 +102,47 @@ export const createDonationDoc = ({
   status = null,
   notes = null,
   pickupPreference = null,
+  preferredPickupDate = null,   // NEW – ISO date string e.g. "2025-08-01"
+  pickupTime = null,            // NEW – time string e.g. "Morning (8am-12pm)"
   isRecurring = false,
   recurringFrequency = null,
+  // Denormalized donor info – written once so Admin/Volunteer never need
+  // a secondary fetch.
+  donorName = null,
+  donorPhone = null,
+  donorAddress = null,  // { street, area, city, state, pincode }
 }) => {
   requireField(donorId, 'donorId', 'createDonationDoc');
   requireField(category, 'category', 'createDonationDoc');
 
-  // Accept either `description` or `reason` from the form
+  // Accept either `description` (new form) or `reason` (legacy form)
   const resolvedDescription = description || reason;
   requireField(resolvedDescription, 'description', 'createDonationDoc');
+
+  // Accept either `units` (new form) or `quantity` (legacy)
+  const resolvedUnits = (units !== undefined && units !== null) ? Number(units) : (quantity !== undefined && quantity !== null ? Number(quantity) : 1);
 
   return {
     donorId,
     category,
     description: resolvedDescription,
-    quantity,
+    // Keep both field names so legacy admin queries work
+    units: resolvedUnits,
+    quantity: resolvedUnits,
     condition,
     location,
     images,
     urgencyLevel,
     notes,
     pickupPreference,
+    preferredPickupDate,
+    pickupTime,
     isRecurring,
     recurringFrequency,
+    // Denormalized donor fields
+    donorName,
+    donorPhone,
+    donorAddress,
     status: status || DONATION_STATUS.PENDING,
     verificationStatus: VERIFICATION_STATUS.PENDING,
     rejectionReason: null,
@@ -202,12 +264,41 @@ export const createVolunteerDoc = ({
 };
 
 // ── Pickup Task Document ─────────────────────────────────────
+// KEY ADDITIONS:
+//  - units, preferredPickupDate, pickupTime stored directly on task.
+//  - donorPhone and donorAddress stored (shown after volunteer accepts).
+//  - receiverName, receiverPhone, receiverAddress added for drop-off.
 
 export const createPickupTaskDoc = ({
   donationIds,
   donorId,
   volunteerId = null,
   status = null,
+  // Donor info (denormalized so volunteer can see after accepting)
+  donorName = null,
+  donorPhone = null,
+  donorAddress = null,      // { street, area, city, state, pincode }
+  donorLocation = null,     // legacy GPS { lat, lng, address }
+  pickupPreference = null,
+  preferredPickupDate = null,
+  pickupTime = null,
+  // Donation summary
+  category = null,
+  description = null,
+  units = null,
+  // Drop-off / Receiver info
+  matchedNgoId = null,
+  ngoName = null,
+  ngoAddress = null,
+  receiverName = null,
+  receiverPhone = null,
+  receiverAddress = null,
+  collectionPointId = null,
+  collectionPointName = null,
+  collectionPointAddress = null,
+  dropOffLocation = null,
+  // Media
+  imageUrls = [],
 }) => {
   requireField(donationIds, 'donationIds', 'createPickupTaskDoc');
   requireField(donorId, 'donorId', 'createPickupTaskDoc');
@@ -217,6 +308,31 @@ export const createPickupTaskDoc = ({
     donorId,
     volunteerId,
     status: status || (volunteerId ? PICKUP_TASK_STATUS.ASSIGNED : PICKUP_TASK_STATUS.OPEN),
+    // Donor details
+    donorName,
+    donorPhone,
+    donorAddress,
+    donorLocation,
+    pickupPreference,
+    preferredPickupDate,
+    pickupTime,
+    // Donation summary
+    category,
+    description,
+    units: units !== null ? Number(units) : null,
+    imageUrls,
+    // Receiver / drop-off
+    matchedNgoId,
+    ngoName,
+    ngoAddress,
+    receiverName: receiverName || ngoName,
+    receiverPhone: receiverPhone || null,
+    receiverAddress: receiverAddress || ngoAddress,
+    collectionPointId,
+    collectionPointName,
+    collectionPointAddress,
+    dropOffLocation,
+    // OTP fields
     otp: null,
     otpExpiresAt: null,
     otpVerified: false,

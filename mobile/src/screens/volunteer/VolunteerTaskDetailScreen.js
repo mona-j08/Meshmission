@@ -169,20 +169,46 @@ export default function VolunteerTaskDetailScreen({ route, navigation }) {
   const isAccepted   = task.status !== "open";
   const isMyTask     = task.volunteerId === currentUid;
   const donationIds  = getDonationIds(task);
-  const fullAddress  = getFullAddress(task.donorLocation || task.pickupLocation);
-  const generalArea  = getGeneralArea(task.donorLocation || task.pickupLocation);
+
+  // ── Pickup address (structured donorAddress wins, then donorLocation) ─────
+  const donorAddrObj   = task.donorAddress || null; // { street, area, city, state, pincode }
+  const donorLocation  = task.donorLocation || task.pickupLocation || null;
+
+  const fullPickupAddress = (() => {
+    if (donorAddrObj && typeof donorAddrObj === 'object') {
+      return [donorAddrObj.street, donorAddrObj.area, donorAddrObj.city, donorAddrObj.state, donorAddrObj.pincode]
+        .filter(Boolean).join(', ') || 'Address not available';
+    }
+    return getFullAddress(donorLocation);
+  })();
+
+  const generalArea  = getGeneralArea(donorLocation);
+
+  // Donor contact (from task denormalized fields OR from private sub-doc)
+  const donorPhone   = task.donorPhone || privateInfo?.phone || null;
+  const donorEmail   = privateInfo?.email || null;
+
+  // Units and pickup scheduling
+  const units          = task.units ?? task.quantity ?? null;
+  const pickupDate     = task.preferredPickupDate || null;
+  const pickupTime     = task.pickupTime || task.pickupPreference || null;
 
   // Drop-off location info
-  const dropOff = task.dropOffLocation || null;
-  const dropOffName = dropOff?.name || task.collectionPointName || task.ngoName || null;
-  const dropOffAddress = dropOff?.address || task.collectionPointAddress || task.ngoAddress || null;
-  const dropOffType = dropOff?.type || (task.collectionPointId ? 'collection_point' : 'ngo');
+  const dropOff        = task.dropOffLocation || null;
+  const dropOffName    = dropOff?.name || task.receiverName || task.collectionPointName || task.ngoName || null;
+  const dropOffAddress = dropOff?.address || task.receiverAddress || task.collectionPointAddress || task.ngoAddress || null;
+  const dropOffType    = dropOff?.type || (task.collectionPointId ? 'collection_point' : 'ngo');
+  const receiverPhone  = isMyTask ? (task.receiverPhone || null) : null;
 
   // Open address in maps
   const openInMaps = (address) => {
     if (!address || address === "Address not available") return;
     const url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
     Linking.openURL(url).catch(() => {});
+  };
+  const callPhone = (phone) => {
+    if (!phone) return;
+    Linking.openURL(`tel:${phone}`).catch(() => {});
   };
 
   // ── Main render ───────────────────────────────────────────────────────────
@@ -192,18 +218,13 @@ export default function VolunteerTaskDetailScreen({ route, navigation }) {
       {/* ── Task Overview card ─────────────────────────────────────────────── */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>Task Details</Text>
-        <DetailRow label="Donor" value={task.donorName || "Unknown Donor"} />
-        <DetailRow label="Category" value={task.category || "General"} />
-        {task.description ? (
-          <DetailRow label="Description" value={task.description} />
-        ) : null}
-        <DetailRow
-          label="Scheduled Date"
-          value={formatScheduledDate(task.scheduledDate)}
-        />
-        {task.pickupPreference ? (
-          <DetailRow label="Pickup Preference" value={task.pickupPreference} />
-        ) : null}
+        <DetailRow label="Donor"     value={task.donorName || "Unknown Donor"} />
+        <DetailRow label="Category"  value={task.category  || "General"} />
+        {task.description ? <DetailRow label="Description" value={task.description} /> : null}
+        {units != null    ? <DetailRow label="Units"       value={String(units)} /> : null}
+        {pickupDate       ? <DetailRow label="Pickup Date"  value={pickupDate} /> : null}
+        {pickupTime       ? <DetailRow label="Pickup Time"  value={pickupTime} /> : null}
+        <DetailRow label="Scheduled Date" value={formatScheduledDate(task.scheduledDate)} />
         <DetailRow label="Status" value={(task.status || "open").toUpperCase()} />
       </View>
 
@@ -218,14 +239,34 @@ export default function VolunteerTaskDetailScreen({ route, navigation }) {
         </View>
         <Text style={styles.locationName}>{task.donorName || "Donor"}</Text>
         <Text style={styles.locationArea}>{generalArea}</Text>
-        <Text style={styles.locationAddress}>{fullAddress}</Text>
-        {fullAddress && fullAddress !== "Address not available" && (
-          <TouchableOpacity
-            style={styles.navigateBtn}
-            onPress={() => openInMaps(fullAddress)}
-          >
-            <Text style={styles.navigateBtnText}>🗺️ Navigate to Pickup</Text>
-          </TouchableOpacity>
+
+        {/* Before accepting: show only area/city. After accepting: full address */}
+        {isMyTask ? (
+          <>
+            {donorAddrObj ? (
+              <>
+                {donorAddrObj.street ? <Text style={styles.locationAddressLine}>{donorAddrObj.street}</Text> : null}
+                {donorAddrObj.area   ? <Text style={styles.locationAddressLine}>{donorAddrObj.area}</Text>   : null}
+                {donorAddrObj.city   ? <Text style={styles.locationAddressLine}>{donorAddrObj.city}{donorAddrObj.state ? ', ' + donorAddrObj.state : ''}</Text> : null}
+                {donorAddrObj.pincode? <Text style={styles.locationAddressLine}>Pincode: {donorAddrObj.pincode}</Text> : null}
+              </>
+            ) : (
+              <Text style={styles.locationAddress}>{fullPickupAddress}</Text>
+            )}
+            {fullPickupAddress && fullPickupAddress !== "Address not available" && (
+              <TouchableOpacity
+                style={styles.navigateBtn}
+                onPress={() => openInMaps(fullPickupAddress)}
+              >
+                <Text style={styles.navigateBtnText}>🗺️ Navigate to Pickup</Text>
+              </TouchableOpacity>
+            )}
+          </>
+        ) : (
+          <Text style={styles.locationAddress}>
+            📍 {generalArea || 'Area not available'}{donorAddrObj?.city ? ', ' + donorAddrObj.city : ''}
+            {"\n"}(Full address visible after accepting)
+          </Text>
         )}
       </View>
 
@@ -233,7 +274,7 @@ export default function VolunteerTaskDetailScreen({ route, navigation }) {
       <View style={[styles.card, styles.dropoffCard]}>
         <View style={styles.locationHeader}>
           <Text style={styles.locationIcon}>🏢</Text>
-          <Text style={styles.locationTitle}>Drop-off Location</Text>
+          <Text style={styles.locationTitle}>Drop-off / Receiver</Text>
           <View style={[styles.locationBadge, styles.dropoffBadge]}>
             <Text style={styles.locationBadgeText}>TO</Text>
           </View>
@@ -242,9 +283,17 @@ export default function VolunteerTaskDetailScreen({ route, navigation }) {
           <>
             <Text style={styles.locationName}>{dropOffName}</Text>
             <Text style={styles.locationTypeLabel}>
-              {dropOffType === 'collection_point' ? '📦 Collection Point' : '🏠 NGO'}
+              {dropOffType === 'collection_point' ? '📦 Collection Point' : '🏠 NGO / Receiver'}
             </Text>
             <Text style={styles.locationAddress}>{dropOffAddress || "Address not available"}</Text>
+            {isMyTask && receiverPhone ? (
+              <TouchableOpacity
+                style={styles.callBtn}
+                onPress={() => callPhone(receiverPhone)}
+              >
+                <Text style={styles.callBtnText}>📞 Call Receiver: {receiverPhone}</Text>
+              </TouchableOpacity>
+            ) : null}
             {dropOffAddress && dropOffAddress !== "Address not available" && (
               <TouchableOpacity
                 style={[styles.navigateBtn, styles.navigateBtnDropoff]}
@@ -260,43 +309,42 @@ export default function VolunteerTaskDetailScreen({ route, navigation }) {
       </View>
 
       {/* ── Donor contact info (visible only after accepting) ─────────────── */}
-      {isMyTask && privateInfo && (
+      {isMyTask && (donorPhone || donorEmail || fullPickupAddress !== 'Address not available') && (
         <View style={[styles.card, styles.contactCard]}>
           <Text style={styles.cardTitle}>📞 Donor Contact</Text>
           <Text style={styles.contactHelpText}>
-            Use the donor's contact details to coordinate pickup — confirm the 
-            exact address, agree on a time slot, or check item availability.
+            Use these details to coordinate the pickup with the donor.
           </Text>
 
-          {privateInfo.phone ? (
+          {donorPhone ? (
             <View style={styles.phoneSection}>
               <View style={styles.phoneRow}>
                 <Text style={styles.phoneIcon}>📱</Text>
                 <View style={styles.phoneInfo}>
                   <Text style={styles.phoneLabel}>Phone Number</Text>
-                  <Text style={styles.phoneNumber}>{privateInfo.phone}</Text>
+                  <Text style={styles.phoneNumber}>{donorPhone}</Text>
                 </View>
               </View>
               <TouchableOpacity
                 style={styles.callBtn}
-                onPress={() => Linking.openURL(`tel:${privateInfo.phone}`)}
+                onPress={() => callPhone(donorPhone)}
               >
                 <Text style={styles.callBtnText}>📞 Call Donor</Text>
               </TouchableOpacity>
             </View>
           ) : null}
 
-          {privateInfo.email ? (
+          {donorEmail ? (
             <TouchableOpacity
               style={styles.contactRow}
-              onPress={() => Linking.openURL(`mailto:${privateInfo.email}`)}
+              onPress={() => Linking.openURL(`mailto:${donorEmail}`)}
             >
               <Text style={styles.contactLabel}>✉️ Email</Text>
-              <Text style={styles.contactValue}>{privateInfo.email}</Text>
+              <Text style={styles.contactValue}>{donorEmail}</Text>
             </TouchableOpacity>
           ) : null}
 
-          {!privateInfo.phone && !privateInfo.email && (
+          {!donorPhone && !donorEmail && (
             <Text style={styles.contactNote}>No contact details on file.</Text>
           )}
         </View>
@@ -611,6 +659,11 @@ const styles = StyleSheet.create({
     color:       "#374151",
     lineHeight:  19,
     marginBottom: 8,
+  },
+  locationAddressLine: {
+    fontSize:    13,
+    color:       "#374151",
+    lineHeight:  20,
   },
   locationTypeLabel: {
     fontSize:    12,
