@@ -458,7 +458,26 @@ export const getDonorDonationsPaginated = async (donorId, pageSize = 10, lastDoc
 
 export const createOrUpdateNGOProfile = async (ngoId, profileData) => {
   try {
-    const docData = createNGOProfileDoc({ ngoId, ...profileData });
+    // Build the update payload directly so we don't fail on missing optional
+    // fields (email, contactPerson) when doing a merge-update on an existing doc.
+    const docData = {
+      ngoId,
+      ngoName:           profileData.ngoName           || null,
+      contactPerson:     profileData.contactPerson     || null,
+      email:             profileData.email             || null,
+      phone:             profileData.phone             || null,
+      address:           profileData.address           || profileData.addresses?.[0] || null,
+      addresses:         profileData.addresses         || null,
+      availability:      profileData.availability      || null,
+      location:          profileData.location          || null,
+      categoriesAccepted: profileData.categoriesAccepted || [],
+      description:       profileData.description       || null,
+      registrationNumber: profileData.registrationNumber || null,
+      isActive:          true,
+      updatedAt:         serverTimestamp(),
+    };
+    // Remove undefined/null values so merge doesn't overwrite existing data with null
+    Object.keys(docData).forEach((k) => { if (docData[k] === undefined) delete docData[k]; });
     await setDoc(doc(db, COLLECTIONS.NGO_PROFILES, ngoId), docData, { merge: true });
     return { error: null };
   } catch (error) {
