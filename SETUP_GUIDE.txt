@@ -1,0 +1,222 @@
+================================================================
+   MESHMISSION — LOCAL SETUP GUIDE (After Cloning)
+================================================================
+
+REPOSITORY : https://github.com/mona-j08/Meshmission
+PROJECT HAS : 2 apps — Admin Panel (React/Vite) + Mobile App (Expo)
+
+----------------------------------------------------------------
+PREREQUISITES — Install these first if not already installed
+----------------------------------------------------------------
+
+1. Node.js (v18 or above)
+   Download: https://nodejs.org/en/download
+
+2. Git
+   Download: https://git-scm.com/downloads
+
+3. VS Code
+   Download: https://code.visualstudio.com/
+
+To check if already installed, open VS Code Terminal and run:
+   node -v
+   npm -v
+   git --version
+
+
+----------------------------------------------------------------
+STEP 1 — CLONE THE REPOSITORY
+----------------------------------------------------------------
+
+Open VS Code → Terminal → New Terminal, then run:
+
+   git clone https://github.com/mona-j08/Meshmission.git
+   cd Meshmission
+
+
+----------------------------------------------------------------
+STEP 2 — CREATE ENVIRONMENT FILES
+----------------------------------------------------------------
+
+You need to create .env files manually in both apps.
+
+--- 2A. Admin Panel ---
+
+Create a new file at:   admin-panel/.env
+
+Paste this content inside it:
+
+   VITE_FIREBASE_API_KEY=AIzaSyAdhiJ5DRpdgQxptz2U-kdEx7VHeVAMPjs
+   VITE_FIREBASE_AUTH_DOMAIN=meshmission-a6f89.firebaseapp.com
+   VITE_FIREBASE_PROJECT_ID=meshmission-a6f89
+   VITE_FIREBASE_STORAGE_BUCKET=meshmission-a6f89.firebasestorage.app
+   VITE_FIREBASE_MESSAGING_SENDER_ID=346166977226
+   VITE_FIREBASE_APP_ID=1:346166977226:web:3379e0a01a1e5d6f7d0a33
+
+
+--- 2B. Mobile App ---
+
+Create a new file at:   mobile/.env
+
+Paste this content inside it:
+
+   EXPO_PUBLIC_FIREBASE_API_KEY=AIzaSyAdhiJ5DRpdgQxptz2U-kdEx7VHeVAMPjs
+   EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN=meshmission-a6f89.firebaseapp.com
+   EXPO_PUBLIC_FIREBASE_PROJECT_ID=meshmission-a6f89
+   EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET=meshmission-a6f89.firebasestorage.app
+   EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=346166977226
+   EXPO_PUBLIC_FIREBASE_APP_ID=1:346166977226:web:3379e0a01a1e5d6f7d0a33
+
+
+----------------------------------------------------------------
+STEP 3 — INSTALL DEPENDENCIES
+----------------------------------------------------------------
+
+You need to install packages for BOTH apps separately.
+
+Open VS Code Terminal.
+
+--- Install Admin Panel ---
+
+   cd admin-panel
+   npm install
+   cd ..
+
+--- Install Mobile App ---
+
+   cd mobile
+   npm install
+   cd ..
+
+--- Install Expo Web Support (one-time only) ---
+
+   cd mobile
+   npx expo install react-dom react-native-web @expo/metro-runtime
+   cd ..
+
+Wait for all installs to finish before moving to Step 4.
+
+
+----------------------------------------------------------------
+STEP 4 — RUN THE APPS (Open 2 Terminals in VS Code)
+----------------------------------------------------------------
+
+In VS Code, open TWO terminals side by side:
+   Terminal Menu → New Terminal  (do this twice)
+
+--- Terminal 1: Admin Panel ---
+
+   cd admin-panel
+   npm run dev
+
+Admin panel will start at:
+   http://localhost:5173
+
+---Terminal 2: Mobile App (Web) ---
+
+   cd mobile
+   npx expo start --web
+
+Mobile app will start at:
+   http://localhost:8081
+
+Open both URLs in your browser.
+The first load of the mobile app may take 30–60 seconds to bundle.
+
+
+----------------------------------------------------------------
+STEP 5 — LOGIN & TEST
+----------------------------------------------------------------
+
+USER ROLES — The app has 3 user types. Register with each role:
+
+   1. DONOR     — Submit donations, track status
+   2. VOLUNTEER — Accept pickup tasks, navigate to addresses
+   3. NGO       — Receive donations at collection points
+
+ADMIN PANEL — Use a Firebase admin account to:
+   - Review and verify incoming donations
+   - Approve or reject donations
+   - Assign NGOs and collection points
+   - Post pickup tasks to the volunteer market
+
+RECOMMENDED TEST FLOW:
+
+   Step 1: Register as a Donor in the mobile app
+   Step 2: Complete donor registration (name, phone, address)
+   Step 3: Submit a donation (fill units, description, pickup date)
+   Step 4: Open admin panel → Donation Verification
+   Step 5: Review the donation → click Approve → assign an NGO
+   Step 6: Login as a Volunteer in mobile app
+   Step 7: Go to Tasks → open the new task
+   Step 8: Accept the task → full donor address + phone revealed
+   Step 9: Use Maps navigation buttons to navigate
+
+
+----------------------------------------------------------------
+FOLDER STRUCTURE (Quick Reference)
+----------------------------------------------------------------
+
+Meshmission/
+├── admin-panel/               ← React + Vite (Web Dashboard)
+│   ├── src/
+│   │   ├── pages/             ← DonationVerification, etc.
+│   │   ├── components/        ← Modals, Tables, Charts
+│   │   ├── hooks/             ← useFirestore.js
+│   │   └── firebase/          ← Firebase config
+│   ├── .env                   ← YOU CREATE THIS (Step 2A)
+│   └── package.json
+│
+└── mobile/                    ← React Native + Expo (Mobile App)
+    ├── src/
+    │   ├── screens/
+    │   │   ├── donor/         ← DonationFormScreen, DonorRegistrationScreen
+    │   │   ├── volunteer/     ← VolunteerTaskDetailScreen
+    │   │   └── ngo/           ← NGO screens
+    │   ├── firebase/          ← firestore.js, storage.js, config.js
+    │   ├── hooks/             ← useDonations.js, useAuth.js
+    │   ├── utils/             ← locationHelper.js, schemas.js
+    │   └── navigation/        ← App navigation stacks
+    ├── .env                   ← YOU CREATE THIS (Step 2B)
+    └── package.json
+
+
+----------------------------------------------------------------
+LOCALHOST QUICK REFERENCE
+----------------------------------------------------------------
+
+   App            URL                   Command
+   -----------    -------------------   -----------------------
+   Admin Panel    http://localhost:5173  npm run dev
+   Mobile (Web)   http://localhost:8081  npx expo start --web
+
+
+----------------------------------------------------------------
+TROUBLESHOOTING
+----------------------------------------------------------------
+
+PROBLEM: 'vite' is not recognized
+FIX:     Run  npm install  inside the admin-panel folder again
+
+PROBLEM: Expo says "react-dom not found"
+FIX:     Run  npx expo install react-dom react-native-web  in mobile/
+
+PROBLEM: Firebase permission denied errors in browser console
+FIX:     Check your .env file is in the right folder and has no typos
+         Restart the dev server after editing .env
+
+PROBLEM: Port 5173 or 8081 already in use
+FIX:     Kill the existing process or use a different port:
+         npm run dev -- --port 5174
+         npx expo start --web --port 8082
+
+PROBLEM: git push fails with 403
+FIX:     Your GitHub credentials may be wrong.
+         Use a Personal Access Token (PAT) as your password.
+         Generate one at: GitHub → Settings → Developer settings
+         → Personal access tokens → Fine-grained → repo scope
+
+
+----------------------------------------------------------------
+   All done! Both apps should now be running locally.
+================================================================
